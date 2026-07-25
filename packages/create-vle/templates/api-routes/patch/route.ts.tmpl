@@ -1,0 +1,59 @@
+/** Dev-only write-back endpoint for VLE (Visual Live Editor). See vle/devGate for the security gate. */
+import { NextRequest, NextResponse } from "next/server";
+import fs from "node:fs";
+import { devGate } from "vle/devGate";
+import { applyPatch, resolveProjectFile, type PatchRequest } from "vle/patch";
+import { pushHistory, historyStatus } from "vle/history";
+import { vleConfig } from "@/vle.config";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: PatchRequest;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body?.file || !body?.kind) {
+    return NextResponse.json({ ok: false, reason: "missing file/kind" }, { status: 400 });
+  }
+  if (body.kind === "reorder") {
+    if (!body.draggedVleId || !body.targetVleId || (body.position !== "before" && body.position !== "after")) {
+      return NextResponse.json({ ok: false, reason: "missing draggedVleId/targetVleId/position" }, { status: 400 });
+    }
+  } else if (body.kind === "insert") {
+    if (!body.targetVleId || (body.position !== "before" && body.position !== "after") || !body.elementSnippet) {
+      return NextResponse.json({ ok: false, reason: "missing targetVleId/position/elementSnippet" }, { status: 400 });
+    }
+  } else if (body.kind === "delete" || body.kind === "styleDelete") {
+    if (!body.vleId) {
+      return NextResponse.json({ ok: false, reason: "missing vleId" }, { status: 400 });
+    }
+  } else {
+    if (!body.vleId) {
+      return NextResponse.json({ ok: false, reason: "missing vleId" }, { status: 400 });
+    }
+    const valueOk = body.kind === "style" ? typeof body.value === "number" || typeof body.value === "string" : typeof body.value === "string";
+    if (!valueOk) {
+      return NextResponse.json({ ok: false, reason: "value must be a string (className/text/style) or a number (style)" }, { status: 400 });
+    }
+  }
+
+  const absPath = resolveProjectFile(vleConfig.projectRoot, body.file);
+  const before = absPath && fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null;
+
+  const result = applyPatch(vleConfig.projectRoot, body);
+
+  if (result.ok && absPath && before !== null) {
+    const after = fs.readFileSync(absPath, "utf8");
+    pushHistory(absPath, before, after);
+  }
+
+  return NextResponse.json(
+    { ...result, ...historyStatus() },
+    { status: result.ok ? 200 : 422 }
+  );
+}

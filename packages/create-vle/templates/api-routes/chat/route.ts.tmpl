@@ -1,0 +1,33 @@
+/**
+ * Dev-only endpoint for the visual editor's global chat — starts/polls a
+ * multi-turn conversation session. See vle/devGate and vle/chatRunner.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle/devGate";
+import { startChatSession, getChatStatus } from "vle/chatRunner";
+import { vleConfig } from "@/vle.config";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  const result = startChatSession(vleConfig);
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}
+
+export async function GET(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  const chatId = req.nextUrl.searchParams.get("chatId");
+  if (!chatId) {
+    return NextResponse.json({ ok: false, reason: "missing chatId" }, { status: 400 });
+  }
+
+  const chat = getChatStatus(chatId);
+  if (!chat) {
+    return NextResponse.json({ ok: false, reason: "chat session not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, chat });
+}

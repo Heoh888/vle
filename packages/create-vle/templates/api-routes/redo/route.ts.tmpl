@@ -1,0 +1,11 @@
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle/devGate";
+import { redo } from "vle/history";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  const result = redo();
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}

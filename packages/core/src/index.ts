@@ -1,0 +1,35 @@
+export type { VleConfig, VleConfigInput } from "./config";
+export { resolveConfig } from "./config";
+
+export { devGate } from "./devGate";
+
+export { historyStatus, pushHistory, undo, redo } from "./history";
+export type { HistoryStatus } from "./history";
+
+export { applyPatch, resolveProjectFile } from "./patch";
+export type { PatchRequest, PatchResult } from "./patch";
+
+export { scanDesignSystem } from "./designSystemScan";
+export type { DesignSystemComponent } from "./designSystemScan";
+
+export { locateElement, buildAgentPrompt, buildChatPrompt } from "./agentPrompt";
+export type { LocatedElement } from "./agentPrompt";
+
+export {
+  startAgentJob,
+  getJobStatus,
+  refineJob,
+  startPreview,
+  applyJob,
+  discardJob,
+} from "./agentRunner";
+export type { StartAgentJobRequest, StartResult, JobPublicView } from "./agentRunner";
+
+export {
+  startChatSession,
+  getChatStatus,
+  sendChatMessage,
+  applyChatSession,
+  discardChatSession,
+} from "./chatRunner";
+export type { ChatMessage, ChatPublicView } from "./chatRunner";

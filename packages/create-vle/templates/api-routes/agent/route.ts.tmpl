@@ -1,0 +1,45 @@
+/**
+ * Dev-only endpoint that starts/polls a headless Claude Code agent job from
+ * the visual editor's comment pin. See vle/devGate for the security gate
+ * and vle/agentRunner for the actual worktree/spawn orchestration.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle/devGate";
+import { startAgentJob, getJobStatus } from "vle/agentRunner";
+import { vleConfig } from "@/vle.config";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: { file?: string; vleId?: string; prompt?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.file || !body.vleId || !body.prompt || !body.prompt.trim()) {
+    return NextResponse.json({ ok: false, reason: "missing file/vleId/prompt" }, { status: 400 });
+  }
+
+  const result = startAgentJob(vleConfig, { file: body.file, vleId: body.vleId, prompt: body.prompt });
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}
+
+export async function GET(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  const jobId = req.nextUrl.searchParams.get("jobId");
+  if (!jobId) {
+    return NextResponse.json({ ok: false, reason: "missing jobId" }, { status: 400 });
+  }
+
+  const job = getJobStatus(jobId);
+  if (!job) {
+    return NextResponse.json({ ok: false, reason: "job not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, job });
+}

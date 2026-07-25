@@ -1,0 +1,25 @@
+import { resolveConfig } from "vle/config";
+
+/**
+ * VLE's configuration — see node_modules/vle/dist/config.d.ts for every
+ * field. Only projectRoot is required; everything else below has a
+ * sensible default. Uncomment and adjust anything that doesn't fit your
+ * setup.
+ */
+export const vleConfig = resolveConfig({
+  projectRoot: process.cwd(),
+
+  // If this Next.js app lives inside a larger monorepo and you want the
+  // agent to see (and be able to edit) the whole repo, not just this app:
+  // repoRoot: path.resolve(process.cwd(), ".."),
+
+  // One paragraph describing your project's stack/structure/conventions —
+  // handed to the agent before every task. The more specific this is, the
+  // less the agent has to rediscover by grepping around on every request.
+  // promptContext: "You are editing my-app, a Next.js app using the App Router, Tailwind CSS, and shadcn/ui components under components/ui/.",
+
+  // Directories (relative to projectRoot) scanned for the design-system palette.
+  // uiDirs: ["components/ui"],
+
+  // accentColor: "#9b8ec4",
+});

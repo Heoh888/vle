@@ -1,0 +1,23 @@
+/** Sends the next message in a global chat session. See vle/devGate / vle/chatRunner. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle/devGate";
+import { sendChatMessage } from "vle/chatRunner";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: { chatId?: string; text?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.chatId || !body.text || !body.text.trim()) {
+    return NextResponse.json({ ok: false, reason: "missing chatId/text" }, { status: 400 });
+  }
+
+  const result = sendChatMessage(body.chatId, body.text);
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}

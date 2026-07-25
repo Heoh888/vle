@@ -1,0 +1,21 @@
+{
+  "name": "create-vle",
+  "version": "0.1.0",
+  "description": "Scaffolds VLE (Visual Live Editor) into a Next.js App Router project.",
+  "license": "MIT",
+  "bin": {
+    "create-vle": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,23 @@
+/** Continues a finished agent job's session with a follow-up instruction, in the same worktree. See vle/devGate / vle/agentRunner. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle/devGate";
+import { refineJob } from "vle/agentRunner";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: { jobId?: string; prompt?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.jobId || !body.prompt || !body.prompt.trim()) {
+    return NextResponse.json({ ok: false, reason: "missing jobId/prompt" }, { status: 400 });
+  }
+
+  const result = refineJob(body.jobId, body.prompt);
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}

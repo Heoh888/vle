@@ -1,0 +1,23 @@
+/** Discards a finished/running agent job (kills the process if still running) and cleans up its worktree. See vle/devGate / vle/agentRunner. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle/devGate";
+import { discardJob } from "vle/agentRunner";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: { jobId?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.jobId) {
+    return NextResponse.json({ ok: false, reason: "missing jobId" }, { status: 400 });
+  }
+
+  const result = discardJob(body.jobId);
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}

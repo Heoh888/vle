@@ -1,0 +1,77 @@
+{
+  "name": "vle",
+  "version": "0.1.0",
+  "description": "Visual Live Editor — an in-browser click-to-edit tool for Next.js apps, with an optional Claude Code agent wired in behind an isolated-worktree + diff-review + explicit-Apply gate.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./agentRunner": {
+      "types": "./dist/agentRunner.d.ts",
+      "default": "./dist/agentRunner.js"
+    },
+    "./chatRunner": {
+      "types": "./dist/chatRunner.d.ts",
+      "default": "./dist/chatRunner.js"
+    },
+    "./patch": {
+      "types": "./dist/patch.d.ts",
+      "default": "./dist/patch.js"
+    },
+    "./devGate": {
+      "types": "./dist/devGate.d.ts",
+      "default": "./dist/devGate.js"
+    },
+    "./history": {
+      "types": "./dist/history.d.ts",
+      "default": "./dist/history.js"
+    },
+    "./designSystemScan": {
+      "types": "./dist/designSystemScan.d.ts",
+      "default": "./dist/designSystemScan.js"
+    },
+    "./babel-loader": "./dist/babel-loader.js",
+    "./overlay/*": {
+      "types": "./dist/overlay/*.d.ts",
+      "default": "./dist/overlay/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "next": ">=14",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "dependencies": {
+    "@babel/generator": "^7.24.0",
+    "@babel/parser": "^7.24.0",
+    "@babel/traverse": "^7.24.0",
+    "@babel/types": "^7.24.0",
+    "tailwind-merge": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/babel__generator": "^7.6.8",
+    "@types/babel__traverse": "^7.20.5",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "next": "^14.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.4.0"
+  }
+}
