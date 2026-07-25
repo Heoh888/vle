@@ -48,16 +48,23 @@
     },
     "./babel-loader": "./dist/babel-loader.js",
     "./overlay/*": {
-      "types": "./dist/overlay/*.d.ts",
-      "default": "./dist/overlay/*.js"
+      "import": {
+        "types": "./dist-esm/overlay/*.d.ts",
+        "default": "./dist-esm/overlay/*.js"
+      },
+      "require": {
+        "types": "./dist/overlay/*.d.ts",
+        "default": "./dist/overlay/*.js"
+      }
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "dist-esm"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepare": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json",
+    "prepare": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "peerDependencies": {

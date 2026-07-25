@@ -193,25 +193,68 @@ export default function vlePlugin(options: VlePluginOptions = {}): Plugin {
   return {
     name: "vite-plugin-vle",
     apply: "serve",
-    // Found live: @vitejs/plugin-react's own transform compiles JSX to
-    // _jsxDEV()/createElement() calls — if it runs before us (the default
-    // when this plugin is listed after react() in vite.config.ts), there's
-    // no JSX syntax left in the code for instrumentJsx to find anything in.
-    // enforce: "pre" is Vite/Rollup's standard escape hatch for exactly
-    // this — same reason the webpack loader uses enforce: "pre" — so
-    // plugin array order in the consumer's vite.config.ts doesn't matter.
     enforce: "pre",
+    // vle/overlay/* ships as CommonJS — webpack (Next.js) handles that
+    // transparently, but Vite's dev server only converts CJS to
+    // browser-usable ESM for dependencies it pre-bundles via esbuild
+    // (optimizeDeps). Found live: when `vle` is installed as a symlink
+    // (a local path/workspace install, not a real npm-registry install),
+    // Vite's dependency crawler treats the resolved real path as project
+    // "source" rather than "an installed dependency" and serves the raw
+    // CJS file straight to the browser via /@fs/ — no interop shim, so its
+    // require() calls throw immediately (white screen, no server-side
+    // error to see). Forcing it into optimizeDeps.include sidesteps the
+    // detection entirely: esbuild pre-bundles it (and, transitively, every
+    // overlay/*.tsx file it imports) into real ESM ahead of time,
+    // regardless of how it was resolved.
+    config() {
+      return {
+        optimizeDeps: {
+          include: ["vle/overlay/VisualEditorOverlay"],
+        },
+      };
+    },
     configResolved(resolvedConfig) {
       config = resolveConfig({ projectRoot: resolvedConfig.root, ...options });
     },
-    transform(code, id) {
+    // Instrumentation lives in `load`, not `transform`. Found live: even
+    // with enforce: "pre" on our own transform hook, @vitejs/plugin-react
+    // ALSO registers its main JSX/babel transform at enforce: "pre" (it's
+    // "vite:react-babel" internally) — and among same-tier plugins, Vite
+    // runs transform hooks in array order, so with the common
+    // `plugins: [react(), vle()]` ordering, react's transform ran first
+    // and rewrote the file (stripped TS types, added Fast Refresh
+    // boilerplate, reformatted ternaries) before we ever saw it. We were
+    // then hashing byte offsets in react-babel's rewritten copy, not the
+    // real file — so every id embedded in the page was already wrong
+    // before it ever reached the browser, and every patch attempt against
+    // it failed server-side with "no element found", indistinguishable
+    // from ordinary staleness until actually compared byte-for-byte
+    // against the file on disk.
+    //
+    // `load` sidesteps the whole tiering question: it's the step that
+    // supplies a module's *initial* content, strictly before any
+    // transform hook (ours or anyone else's) runs. We read the file
+    // straight off disk here and instrument it ourselves; the (still
+    // spec-compliant, still-real-JSX) result then flows through
+    // react-babel/esbuild exactly like any hand-written source would,
+    // carrying our data-vle-* attributes along as ordinary JSX attributes.
+    load(id) {
       if (process.env.NODE_ENV === "production") return null;
-      if (!/\.[jt]sx$/.test(id)) return null;
-      if (id.includes("/node_modules/")) return null;
-      const relPath = path.relative(config.projectRoot, id).split(path.sep).join("/");
-      const result = instrumentJsx(code, relPath);
+      // Same reasoning as the old transform hook's id handling — Vite
+      // appends a cache-busting `?t=...` query after an HMR update, which
+      // must be stripped before the extension check and before computing
+      // relPath (an un-stripped query would end up embedded in the hash
+      // input, silently producing different ids after the first edit).
+      const cleanId = id.split("?")[0];
+      if (!/\.[jt]sx$/.test(cleanId)) return null;
+      if (cleanId.includes("/node_modules/")) return null;
+      if (!fs.existsSync(cleanId)) return null;
+      const source = fs.readFileSync(cleanId, "utf8");
+      const relPath = path.relative(config.projectRoot, cleanId).split(path.sep).join("/");
+      const result = instrumentJsx(source, relPath);
       if (!result) return null;
-      return { code: result.code, map: result.map };
+      return result.code;
     },
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
