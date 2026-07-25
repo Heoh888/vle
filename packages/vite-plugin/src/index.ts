@@ -215,6 +215,22 @@ export default function vlePlugin(options: VlePluginOptions = {}): Plugin {
         optimizeDeps: {
           include: ["vle/overlay/VisualEditorOverlay"],
         },
+        // Defense in depth alongside config.ts's own repoRoot auto-detection
+        // (which now walks up to the real git top-level so a worktree
+        // should never land inside a watched directory to begin with) —
+        // found live: a worktree that DOES end up nested in the project
+        // root (a misconfigured repoRoot, or a non-monorepo project where
+        // .vle-worktrees legitimately sits right here) is a git worktree
+        // add — potentially hundreds of files appearing at once, including
+        // a nested copy of this very vite.config.ts. Vite treats a config
+        // file change as grounds for a full reload/restart, which is
+        // exactly the "page reloads the moment an agent job starts" bug
+        // this was traced back to.
+        server: {
+          watch: {
+            ignored: ["**/.vle-worktrees/**"],
+          },
+        },
       };
     },
     configResolved(resolvedConfig) {

@@ -68,6 +68,7 @@ export interface VleConfig {
   stylingMode: "tailwind" | "inline";
 }
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -83,12 +84,38 @@ function detectStylingMode(projectRoot: string): "tailwind" | "inline" {
   return hasTailwindConfig ? "tailwind" : "inline";
 }
 
+/**
+ * Found live, the hard way: defaulting repoRoot to projectRoot (the old
+ * behavior) is wrong for any project that's actually a subdirectory of a
+ * larger monorepo — git itself searches upward for the real .git root
+ * regardless of what `cwd` a command runs from, so worktree *creation*
+ * still silently succeeded against the real repo, but the worktree's
+ * physical *path* was computed from the wrong (too-narrow) root and ended
+ * up nested inside projectRoot — i.e. inside the exact directory a dev
+ * server's file watcher watches. A ~1000-file burst appearing there
+ * (a full monorepo checkout, including a fresh nested copy of the
+ * project's own vite.config.ts) is what triggered an unexpected full
+ * page reload the moment an agent job started. Walking up to the real
+ * git top-level up front avoids ever computing a worktree path inside a
+ * watched directory in the first place.
+ */
+function detectRepoRoot(projectRoot: string): string {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: projectRoot, stdio: ["ignore", "pipe", "ignore"] })
+      .toString("utf8")
+      .trim();
+    return out || projectRoot;
+  } catch {
+    return projectRoot; // not a git repo (yet) — fall back to the old default rather than fail config resolution over it
+  }
+}
+
 export type VleConfigInput = Partial<VleConfig> & { projectRoot: string };
 
 /** Fills in every field a consumer's `vle.config.ts` didn't set. Only `projectRoot` is required. */
 export function resolveConfig(input: VleConfigInput): VleConfig {
   const projectRoot = input.projectRoot;
-  const repoRoot = input.repoRoot ?? projectRoot;
+  const repoRoot = input.repoRoot ?? detectRepoRoot(projectRoot);
   return {
     projectRoot,
     repoRoot,
