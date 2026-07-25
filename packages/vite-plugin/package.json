@@ -1,0 +1,28 @@
+{
+  "name": "vite-plugin-vle",
+  "version": "0.1.0",
+  "description": "Vite adapter for VLE (Visual Live Editor) — JSX instrumentation + the /api/vle/* dev endpoints, both wired into Vite's own dev server, no separate route files needed.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "vite": ">=4"
+  },
+  "dependencies": {
+    "vle": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.4.0"
+  }
+}

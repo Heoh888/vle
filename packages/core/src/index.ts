@@ -2,6 +2,11 @@ export type { VleConfig, VleConfigInput } from "./config";
 export { resolveConfig } from "./config";
 
 export { devGate } from "./devGate";
+export { checkDevGate } from "./devGateCore";
+export type { DevGateResult } from "./devGateCore";
+
+export { instrumentJsx } from "./instrumentJsx";
+export type { InstrumentResult } from "./instrumentJsx";
 
 export { historyStatus, pushHistory, undo, redo } from "./history";
 export type { HistoryStatus } from "./history";

@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useInspector } from "./useInspector";
 import { HighlightBox } from "./HighlightBox";
 import { EditPanel } from "./EditPanel";
@@ -29,56 +28,50 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Mounted once in app/layout.tsx, gated to development only there — this
+ * Framework-agnostic base — computes the ?vle_hide=1 / "inside an iframe"
+ * check synchronously from window.location.search. Safe with zero flash
+ * for pure client-rendered apps (Vite, CRA): there's no separate SSR pass
+ * to disagree with, so `window` is always defined by the time this first
+ * runs. Frameworks that DO server-render this component (Next.js) should
+ * not rely on this default — see hideForPreview below.
+ */
+function computeDefaultHide(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("vle_hide") === "1" || window.self !== window.top;
+}
+
+/**
+ * Mounted once at the app's root, gated to development only there — this
  * component itself doesn't re-check NODE_ENV so it can be unit-tested, the
- * gate belongs at the mount site (see layout.tsx).
- *
- * Wrapped in Suspense because the inner component reads useSearchParams()
- * (see VisualEditorOverlayInner) — required by Next.js for that hook.
+ * gate belongs at the mount site.
  */
 export interface VisualEditorOverlayProps {
   /** Accent color for the editor's own UI chrome. Set via a document-level CSS custom property (--vle-accent) so every overlay component can pick it up regardless of where it mounts in the DOM. Defaults to VLE's own purple. */
   accentColor?: string;
+  /**
+   * Overrides the ?vle_hide=1 / iframe check computeDefaultHide() makes by
+   * default. Only frameworks that server-render this component need this —
+   * see vle/overlay/adapters/next's VisualEditorOverlay, which supplies an
+   * SSR-safe value here via next/navigation's useSearchParams(). Reading
+   * window.location.search directly during an SSR pass would always
+   * disagree with the client's first paint and produce a hydration
+   * mismatch — that's the one thing the framework-agnostic default here
+   * can't safely do on its own.
+   */
+  hideForPreview?: boolean;
 }
 
-export function VisualEditorOverlay({ accentColor }: VisualEditorOverlayProps = {}) {
-  return (
-    <Suspense fallback={null}>
-      <VisualEditorOverlayInner accentColor={accentColor} />
-    </Suspense>
-  );
-}
+export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEditorOverlayProps = {}) {
+  const [defaultHide] = useState(computeDefaultHide);
+  const hideForResponsivePreview = hideForPreview ?? defaultHide;
 
-function VisualEditorOverlayInner({ accentColor = "#9b8ec4" }: VisualEditorOverlayProps) {
   useEffect(() => {
-    document.documentElement.style.setProperty("--vle-accent", accentColor);
+    document.documentElement.style.setProperty("--vle-accent", accentColor ?? "#9b8ec4");
   }, [accentColor]);
 
   const { inspecting, toggleInspecting, hoveredEl, selectedEl, selectElement } = useInspector();
   const [history, setHistory] = useState<HistoryStatus>({ canUndo: false, canRedo: false });
   const [responsiveOpen, setResponsiveOpen] = useState(false);
-
-  // Set only on the ?vle_hide=1 iframe ResponsivePreview loads the current
-  // page into — a clean device-size check shouldn't show this tool's own
-  // toolbar/panels floating on top of the page being inspected. Found live:
-  // reading `window.location.search` directly doesn't work — `window` is
-  // undefined during SSR, so the server-rendered HTML always included the
-  // toolbar regardless of the param, and the client-side-only correction
-  // wasn't reliably clearing it after hydration. useSearchParams() is
-  // SSR-aware — server and client agree on the very first render, no
-  // mismatch to reconcile away.
-  //
-  // Found live *again*: the query param only covers the page ResponsivePreview
-  // actually loaded — clicking a link inside that iframe does a client-side
-  // Next.js navigation to a new route, which drops the query string, so the
-  // toolbar reappeared on every page but the first. Query param alone can't
-  // survive in-app navigation. `window.self !== window.top` can — it's true
-  // for as long as we're rendered inside ANY iframe, regardless of route,
-  // and it's only relied on client-side (post-hydration, no SSR mismatch
-  // risk left by then) as a supplement to the query-param check, not a
-  // replacement for it.
-  const searchParams = useSearchParams();
-  const hideForResponsivePreview = searchParams.get("vle_hide") === "1" || (typeof window !== "undefined" && window.self !== window.top);
 
   // Independent second picker for "leave a comment for the agent" — useInspector
   // is already self-contained/reusable for exactly this ("pick a tagged element"),

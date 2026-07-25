@@ -1,29 +1,64 @@
 #!/usr/bin/env node
 /**
  * `npx create-vle init` — lays down the handful of files that physically
- * have to exist inside a consuming Next.js App Router project (thin
- * app/api/vle/*\/route.ts re-exports, a vle.config.ts) because Next.js
- * resolves API routes and webpack config from the project's own file tree —
- * there's no way to ship those as pure npm-importable code. Everything else
- * (the actual logic, the overlay UI) ships as the normal `vle` npm
- * dependency. Same shape as shadcn/ui's `init` for the same class of
- * problem.
+ * have to exist inside a consuming project's own file tree, because the
+ * bundler/router resolves them from there — there's no way to ship those
+ * as pure npm-importable code. Everything else (the actual logic, the
+ * overlay UI) ships as normal npm dependencies (`vle`, and for Vite
+ * projects `vite-plugin-vle`). Same shape as shadcn/ui's `init` for the
+ * same class of problem.
  *
- * Deliberately does not touch layout.tsx or next.config.mjs automatically
- * — both vary too much across real projects to safely string-patch. Prints
- * exact snippets instead and lets the developer place them.
+ * Supports two frameworks, auto-detected:
+ *  - Next.js App Router: thin app/api/vle/*\/route.ts re-exports (Next
+ *    resolves API routes from the file tree, no other way to define them).
+ *  - Vite + React: no route files needed at all — vite-plugin-vle serves
+ *    the same endpoints itself via Vite's own dev server middleware.
+ *
+ * Deliberately does not touch layout.tsx/main.tsx or next.config.mjs/
+ * vite.config.ts automatically — both vary too much across real projects
+ * to safely string-patch. Prints exact snippets instead and lets the
+ * developer place them.
  */
 import fs from "node:fs";
 import path from "node:path";
 
 const TEMPLATES_DIR = path.join(__dirname, "..", "templates");
 
-function findAppDir(cwd: string): string | null {
+type Framework = "next" | "vite";
+
+function readPackageJson(cwd: string): any | null {
+  const pkgPath = path.join(cwd, "package.json");
+  if (!fs.existsSync(pkgPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function findNextAppDir(cwd: string): string | null {
   for (const candidate of ["app", "src/app"]) {
     if (fs.existsSync(path.join(cwd, candidate, "layout.tsx")) || fs.existsSync(path.join(cwd, candidate, "layout.jsx"))) {
       return candidate;
     }
   }
+  return null;
+}
+
+function findViteConfig(cwd: string): string | null {
+  for (const candidate of ["vite.config.ts", "vite.config.js", "vite.config.mjs", "vite.config.cjs"]) {
+    if (fs.existsSync(path.join(cwd, candidate))) return candidate;
+  }
+  return null;
+}
+
+function detectFramework(cwd: string, pkg: any): { framework: Framework; appDir?: string; viteConfigFile?: string } | null {
+  const appDir = findNextAppDir(cwd);
+  if (appDir) return { framework: "next", appDir };
+
+  const viteConfigFile = findViteConfig(cwd);
+  if (viteConfigFile) return { framework: "vite", viteConfigFile };
+
   return null;
 }
 
@@ -65,32 +100,21 @@ function ensureGitignoreEntry(cwd: string): void {
   console.log("  + appended .vle-worktrees/ to .gitignore");
 }
 
-function init(): void {
-  const cwd = process.cwd();
-
-  if (!fs.existsSync(path.join(cwd, "package.json"))) {
-    console.error("No package.json found here — run this from the root of your Next.js project.");
-    process.exit(1);
-  }
-
-  const appDir = findAppDir(cwd);
-  if (!appDir) {
-    console.error("Couldn't find app/layout.tsx or src/app/layout.tsx — VLE only supports the Next.js App Router.");
-    process.exit(1);
-  }
-
-  console.log(`Found Next.js App Router project (${appDir}/).\n`);
-
-  // vle.config.ts
+function writeVleConfig(cwd: string): void {
   const configDest = path.join(cwd, "vle.config.ts");
   if (fs.existsSync(configDest)) {
     console.log("  · vle.config.ts already exists, skipping");
-  } else {
-    fs.copyFileSync(path.join(TEMPLATES_DIR, "vle.config.ts.tmpl"), configDest);
-    console.log("  + vle.config.ts");
+    return;
   }
+  fs.copyFileSync(path.join(TEMPLATES_DIR, "vle.config.ts.tmpl"), configDest);
+  console.log("  + vle.config.ts");
+}
 
-  // app/api/vle/**/route.ts
+function initNext(cwd: string, appDir: string): void {
+  console.log(`Found Next.js App Router project (${appDir}/).\n`);
+
+  writeVleConfig(cwd);
+
   const apiDest = path.join(cwd, appDir, "api", "vle");
   const { written, skipped } = copyRouteTemplates(path.join(TEMPLATES_DIR, "api-routes"), apiDest);
   for (const f of written) console.log(`  + ${appDir}/api/vle/${f}`);
@@ -102,14 +126,16 @@ function init(): void {
 Three manual steps left — these touch files that vary too much across
 projects to safely edit automatically:
 
-1. Install the package (not yet on the npm registry — for now, point at
+1. Install the packages (not yet on the npm registry — for now, point at
    this checkout or a tarball):
      npm install vle
 
 2. Mount the overlay in ${appDir}/layout.tsx, gated to development only
-   (it writes to source files on disk — never let it run in production):
+   (it writes to source files on disk — never let it run in production).
+   Use the Next.js adapter, not the base export — it keeps the toolbar
+   from flashing visible for a frame during server-side rendering:
 
-     import { VisualEditorOverlay } from "vle/overlay/VisualEditorOverlay";
+     import { VisualEditorOverlay } from "vle/overlay/adapters/next";
      ...
      {process.env.NODE_ENV === "development" && <VisualEditorOverlay />}
 
@@ -139,6 +165,84 @@ inside an isolated git worktree, and nothing touches your real files until
 you review the diff and click Apply. Make sure the \`claude\` CLI is
 installed and logged in first.
 `);
+}
+
+function findViteEntry(cwd: string): string | null {
+  for (const candidate of ["src/main.tsx", "src/App.tsx", "main.tsx", "App.tsx"]) {
+    if (fs.existsSync(path.join(cwd, candidate))) return candidate;
+  }
+  return null;
+}
+
+function initVite(cwd: string, viteConfigFile: string): void {
+  console.log(`Found a Vite project (${viteConfigFile}).\n`);
+
+  writeVleConfig(cwd);
+  ensureGitignoreEntry(cwd);
+
+  const entry = findViteEntry(cwd);
+  const entryHint = entry ? entry : "your app's root component";
+
+  console.log(`
+No route files needed for Vite — vite-plugin-vle serves the /api/vle/*
+endpoints itself from Vite's own dev server. Two manual steps left:
+
+1. Install the packages (not yet on the npm registry — for now, point at
+   this checkout or a tarball):
+     npm install vle vite-plugin-vle
+
+2. Add the plugin to ${viteConfigFile}:
+
+     import vle from "vite-plugin-vle";
+
+     export default defineConfig({
+       plugins: [react(), vle()],
+     });
+
+3. Mount the overlay in ${entryHint}, gated to development only (it writes
+   to source files on disk — never let it run in production). Vite/CRA-style
+   apps are pure client-rendered, so the base export (no adapter needed)
+   is exactly right here:
+
+     import { VisualEditorOverlay } from "vle/overlay/VisualEditorOverlay";
+     ...
+     {import.meta.env.DEV && <VisualEditorOverlay />}
+
+Then run \`npm run dev\`, open the app, and look for the toolbar in the
+bottom-right corner.
+
+One more thing worth knowing before you turn on the agent/chat features:
+they shell out to the Claude Code CLI with --dangerously-skip-permissions
+inside an isolated git worktree, and nothing touches your real files until
+you review the diff and click Apply. Make sure the \`claude\` CLI is
+installed and logged in first.
+`);
+}
+
+function init(): void {
+  const cwd = process.cwd();
+  const pkg = readPackageJson(cwd);
+
+  if (!pkg) {
+    console.error("No package.json found here — run this from the root of your project.");
+    process.exit(1);
+  }
+
+  const detected = detectFramework(cwd, pkg);
+  if (!detected) {
+    console.error(
+      "Couldn't detect a supported framework here. VLE currently supports:\n" +
+        "  - Next.js App Router (looks for app/layout.tsx or src/app/layout.tsx)\n" +
+        "  - Vite + React (looks for vite.config.{ts,js,mjs,cjs})"
+    );
+    process.exit(1);
+  }
+
+  if (detected.framework === "next") {
+    initNext(cwd, detected.appDir!);
+  } else {
+    initVite(cwd, detected.viteConfigFile!);
+  }
 }
 
 const [, , command] = process.argv;

@@ -30,6 +30,14 @@
       "types": "./dist/devGate.d.ts",
       "default": "./dist/devGate.js"
     },
+    "./devGateCore": {
+      "types": "./dist/devGateCore.d.ts",
+      "default": "./dist/devGateCore.js"
+    },
+    "./instrumentJsx": {
+      "types": "./dist/instrumentJsx.d.ts",
+      "default": "./dist/instrumentJsx.js"
+    },
     "./history": {
       "types": "./dist/history.d.ts",
       "default": "./dist/history.js"
@@ -56,6 +64,11 @@
     "next": ">=14",
     "react": ">=18",
     "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@babel/generator": "^7.24.0",

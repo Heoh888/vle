@@ -1,23 +1,16 @@
 /**
- * Shared security gate for every visual-editor API route — one place to get
- * this right rather than duplicating it per-route. Refuses anything outside
- * NODE_ENV=development, and anything not addressed to localhost: these
- * routes write directly to source files on disk.
+ * Next.js Route Handler adapter over the shared devGateCore check — kept
+ * at this same export path/name for backward compatibility with existing
+ * `app/api/vle/*` route templates. See devGateCore.ts for the actual
+ * dev-only/localhost-only logic; this file only adapts it to
+ * NextRequest/NextResponse.
  */
 import { NextRequest, NextResponse } from "next/server";
-
-function isLocalhost(req: NextRequest): boolean {
-  const host = req.headers.get("host") ?? "";
-  return host.startsWith("localhost:") || host.startsWith("127.0.0.1:") || host === "localhost" || host === "127.0.0.1";
-}
+import { checkDevGate } from "./devGateCore";
 
 /** Returns a response to short-circuit with, or null if the request may proceed. */
 export function devGate(req: NextRequest): NextResponse | null {
-  if (process.env.NODE_ENV !== "development") {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
-  if (!isLocalhost(req)) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-  return null;
+  const result = checkDevGate(req.headers.get("host"));
+  if (result.ok) return null;
+  return NextResponse.json({ error: result.error }, { status: result.status });
 }
