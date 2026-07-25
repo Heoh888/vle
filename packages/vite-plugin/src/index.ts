@@ -83,6 +83,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
     const components = scanDesignSystem(config);
     return sendJson(res, 200, { ok: true, components });
   }
+  if (method === "GET" && pathname === "/api/vle/meta") {
+    return sendJson(res, 200, { ok: true, stylingMode: config.stylingMode });
+  }
 
   // POST endpoints
   if (method !== "POST") return sendJson(res, 404, { ok: false, reason: "not found" });

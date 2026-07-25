@@ -69,6 +69,25 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
     document.documentElement.style.setProperty("--vle-accent", accentColor ?? "#9b8ec4");
   }, [accentColor]);
 
+  // Whether EditPanel's controls should write Tailwind classes or real
+  // inline styles — server-side config (vle.config.ts's stylingMode) the
+  // browser has no way to read on its own. Defaults to "tailwind" (the
+  // long-established behavior) until this resolves, rather than flashing
+  // every field into a different write-mode a moment after mount.
+  const [stylingMode, setStylingMode] = useState<"tailwind" | "inline">("tailwind");
+  useEffect(() => {
+    fetch("/api/vle/meta")
+      .then((res) => res.json())
+      .then((result) => {
+        if (result?.ok && (result.stylingMode === "tailwind" || result.stylingMode === "inline")) {
+          setStylingMode(result.stylingMode);
+        }
+      })
+      .catch(() => {
+        // Best-effort — worst case, controls stay in the "tailwind" default.
+      });
+  }, []);
+
   const { inspecting, toggleInspecting, hoveredEl, selectedEl, selectElement } = useInspector();
   const [history, setHistory] = useState<HistoryStatus>({ canUndo: false, canRedo: false });
   const [responsiveOpen, setResponsiveOpen] = useState(false);
@@ -533,6 +552,7 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
         <EditPanel
           key={selectedEl.getAttribute("data-vle-id") ?? undefined}
           el={selectedEl}
+          stylingMode={stylingMode}
           onClose={() => selectElement(null)}
           onPatched={setHistory}
         />

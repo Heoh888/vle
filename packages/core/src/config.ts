@@ -48,8 +48,27 @@ export interface VleConfig {
 
   /** Accent color for the editor's own UI chrome (buttons, highlights, active states). */
   accentColor: string;
+
+  /**
+   * Whether the overlay's editing controls (corner radius, border,
+   * padding/margin, colors, font size, alignment…) should write Tailwind
+   * utility classes or real inline `style={{...}}` values. Found live,
+   * the hard way: on a project with no Tailwind at all, a "corner radius"
+   * edit wrote a syntactically valid `rounded-tl-[44px]` className — the
+   * patch itself succeeded — but nothing rendered differently, because no
+   * build step was ever generating CSS for that class. Inline styles are
+   * a browser-level mechanism, not tied to any CSS methodology, so
+   * `"inline"` is the one fallback that works regardless of what the
+   * project actually uses for styling (CSS modules, styled-components,
+   * plain CSS, antd, anything) — it just won't match an existing design
+   * system's tokens the way a real Tailwind class would. Auto-detected
+   * from whether a `tailwind.config.*` exists at `projectRoot` unless set
+   * explicitly.
+   */
+  stylingMode: "tailwind" | "inline";
 }
 
+import fs from "node:fs";
 import path from "node:path";
 
 const DEFAULT_PROMPT_CONTEXT =
@@ -57,6 +76,12 @@ const DEFAULT_PROMPT_CONTEXT =
 
 const DEFAULT_UI_DIRS = ["components/ui"];
 const DEFAULT_ACCENT = "#9b8ec4";
+const TAILWIND_CONFIG_CANDIDATES = ["tailwind.config.ts", "tailwind.config.js", "tailwind.config.mjs", "tailwind.config.cjs"];
+
+function detectStylingMode(projectRoot: string): "tailwind" | "inline" {
+  const hasTailwindConfig = TAILWIND_CONFIG_CANDIDATES.some((f) => fs.existsSync(path.join(projectRoot, f)));
+  return hasTailwindConfig ? "tailwind" : "inline";
+}
 
 export type VleConfigInput = Partial<VleConfig> & { projectRoot: string };
 
@@ -72,5 +97,6 @@ export function resolveConfig(input: VleConfigInput): VleConfig {
     uiDirs: input.uiDirs ?? DEFAULT_UI_DIRS,
     pathAnchors: input.pathAnchors ?? [],
     accentColor: input.accentColor ?? DEFAULT_ACCENT,
+    stylingMode: input.stylingMode ?? detectStylingMode(projectRoot),
   };
 }

@@ -8,9 +8,14 @@ import { FONT_LIBRARY, ensureGoogleFontLoaded } from "./fontLibrary";
 
 interface Props {
   el: HTMLElement;
+  /** "tailwind" writes utility classes (the long-established default); "inline" writes real style={{...}} values instead — the only fallback that works regardless of the project's actual CSS methodology, for projects with no Tailwind at all. See VleConfig.stylingMode. */
+  stylingMode: "tailwind" | "inline";
   onClose: () => void;
   onPatched: (status: { canUndo: boolean; canRedo: boolean }) => void;
 }
+
+/** A CSS property + the value to write for it via an inline-style patch — the fallback every Tailwind-utility-writing control below needs when stylingMode is "inline". */
+type InlineEquivalent = { property: string; value: number | string };
 
 type SaveState = { status: "idle" } | { status: "saving" } | { status: "ok" } | { status: "error"; reason: string };
 
@@ -471,7 +476,7 @@ function NumberField({ label, unit = "px", initial, onApply }: {
  * don't have to remember/type a CSS property name for the everyday cases;
  * "Any CSS property" below covers everything else.
  */
-export function EditPanel({ el, onClose, onPatched }: Props) {
+export function EditPanel({ el, stylingMode, onClose, onPatched }: Props) {
   const { file, vleId } = fileAndIdFor(el);
   const vleLoc = el.getAttribute("data-vle-loc") ?? "";
   const [save, setSave] = useState<SaveState>({ status: "idle" });
@@ -491,9 +496,18 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
     onPatched(result);
   };
 
-  const applyClassUtility = async (value: string) => {
+  // `inlineEquivalent` is the real CSS property+value the Tailwind class
+  // above it means — only used when stylingMode is "inline" (see
+  // VleConfig.stylingMode). Optional because a few call sites (bold/
+  // italic toggles' underlying values are computed inline at the call
+  // site anyway) always pass one; every call site below does.
+  const applyClassUtility = async (twValue: string, inlineEquivalent?: InlineEquivalent) => {
     setSaving();
-    finish(await postPatch({ file, vleId, kind: "className", value }));
+    if (stylingMode === "inline" && inlineEquivalent) {
+      finish(await postPatch({ file, vleId, kind: "style", property: inlineEquivalent.property, value: inlineEquivalent.value }));
+      return;
+    }
+    finish(await postPatch({ file, vleId, kind: "className", value: twValue }));
   };
 
   // A bare "all corners" Tailwind radius class (rounded, rounded-lg,
@@ -512,6 +526,20 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
 
   const applyCornerRadius = async (corner: "all" | "tl" | "tr" | "br" | "bl", n: number) => {
     setSaving();
+    if (stylingMode === "inline") {
+      const property =
+        corner === "all"
+          ? "borderRadius"
+          : corner === "tl"
+            ? "borderTopLeftRadius"
+            : corner === "tr"
+              ? "borderTopRightRadius"
+              : corner === "br"
+                ? "borderBottomRightRadius"
+                : "borderBottomLeftRadius";
+      finish(await postPatch({ file, vleId, kind: "style", property, value: `${n}px` }));
+      return;
+    }
     const current = el.getAttribute("class") ?? "";
     const stripped = stripAllCornersClass(current);
     if (stripped !== current) {
@@ -534,12 +562,20 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
   // is literally written in the JSX source — and patch.ts needs the exact
   // literal name to find it. The raw `style` HTML attribute text is what
   // actually reflects the source property name.
+  // When stylingMode is "inline", falls back to a sensible default
+  // property name (not just null) even if the element doesn't already
+  // have an inline color set — on a project with no Tailwind at all,
+  // *-[hex] utility classes never render anything, so there's no
+  // meaningful "leave it as a class" option to fall back to.
   const inlineColorProp = (cssKind: "background" | "color"): string | null => {
     const raw = el.getAttribute("style") ?? "";
-    if (cssKind === "color") return /(?:^|;)\s*color\s*:/.test(raw) ? "color" : null;
+    if (cssKind === "color") {
+      if (/(?:^|;)\s*color\s*:/.test(raw)) return "color";
+      return stylingMode === "inline" ? "color" : null;
+    }
     if (/(?:^|;)\s*background-color\s*:/.test(raw)) return "backgroundColor";
     if (/(?:^|;)\s*background\s*:/.test(raw)) return "background";
-    return null;
+    return stylingMode === "inline" ? "backgroundColor" : null;
   };
 
   const setColor = async (cssKind: "background" | "color", twPrefix: "bg" | "text", hex: string) => {
@@ -578,7 +614,7 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
 
   const applyBorder = async (patch: { width?: number; style?: "none" | "solid" | "dashed" | "dotted"; color?: string }) => {
     setSaving();
-    if (hasInlineBorder()) {
+    if (hasInlineBorder() || stylingMode === "inline") {
       const width = patch.width ?? currentPx("border-top-width");
       const styleVal = patch.style ?? currentBorderStyleValue();
       const color = patch.color ?? currentColor("border-top-color").hex;
@@ -601,8 +637,8 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
 
   const isBold = computed ? parseInt(computed.fontWeight, 10) >= 600 : false;
   const isItalic = computed?.fontStyle === "italic";
-  const toggleBold = () => applyClassUtility(isBold ? "font-normal" : "font-bold");
-  const toggleItalic = () => applyClassUtility(isItalic ? "not-italic" : "italic");
+  const toggleBold = () => applyClassUtility(isBold ? "font-normal" : "font-bold", { property: "fontWeight", value: isBold ? 400 : 700 });
+  const toggleItalic = () => applyClassUtility(isItalic ? "not-italic" : "italic", { property: "fontStyle", value: isItalic ? "normal" : "italic" });
 
   const applyGradient = async (value: string) => {
     setSaving();
@@ -628,6 +664,14 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
     setSaving();
     finish(await postPatch({ file, vleId, kind: "text", value: text }));
   };
+
+  // "start"/"end" are valid align-self/justify-self values in modern CSS
+  // too, but "flex-start"/"flex-end" matches what getComputedStyle
+  // actually returns (and what AlignButtons's isActive() already
+  // normalizes toward when reading the CURRENT value) — writing the same
+  // form keeps read and write consistent.
+  const alignSelfCssValue = (v: "auto" | "start" | "center" | "end" | "stretch"): string =>
+    v === "start" ? "flex-start" : v === "end" ? "flex-end" : v;
 
   const applyDelete = async () => {
     if (!window.confirm("Delete this element? (Cmd+Z / the ↶ button undoes it)")) return;
@@ -673,9 +717,18 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
           onApplyGradient={applyGradient}
           onClear={() => clearColor("background", "bg")}
         />
-        <NumberField label="Padding" initial={currentPx("padding-left")} onApply={(n) => applyClassUtility(`p-[${n}px]`)} />
-        <NumberField label="Margin" initial={currentPx("margin-left")} onApply={(n) => applyClassUtility(`m-[${n}px]`)} />
-        <NumberField label="Rotation" unit="deg" initial={computed ? currentRotationDeg(computed.transform) : 0} onApply={(n) => applyClassUtility(`rotate-[${n}deg]`)} />
+        <NumberField label="Padding" initial={currentPx("padding-left")} onApply={(n) => applyClassUtility(`p-[${n}px]`, { property: "padding", value: `${n}px` })} />
+        <NumberField label="Margin" initial={currentPx("margin-left")} onApply={(n) => applyClassUtility(`m-[${n}px]`, { property: "margin", value: `${n}px` })} />
+        <NumberField
+          label="Rotation"
+          unit="deg"
+          initial={computed ? currentRotationDeg(computed.transform) : 0}
+          // Inline fallback overwrites `transform` wholesale (rotate-only) —
+          // same "known simplification" as the border shorthand below: an
+          // element that also translates/scales via inline transform would
+          // lose that on a rotation edit. Rare enough not to special-case.
+          onApply={(n) => applyClassUtility(`rotate-[${n}deg]`, { property: "transform", value: `rotate(${n}deg)` })}
+        />
         {/* Width/Height deliberately not here — see ResizeHandles.tsx: many
             elements (e.g. FeaturesSection cards) size via style={{width}},
             which always wins over a className w-[...] (inline style
@@ -705,11 +758,11 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
       </Section>
 
       <Section id="text" title="Text" defaultOpen={true}>
-        <TextAlignButtons current={computed?.textAlign ?? "left"} onApply={(v) => applyClassUtility(`text-${v}`)} />
+        <TextAlignButtons current={computed?.textAlign ?? "left"} onApply={(v) => applyClassUtility(`text-${v}`, { property: "textAlign", value: v })} />
         <FontPicker label="Font family" current={computed?.fontFamily ?? ""} onApply={applyFontFamily} />
-        <NumberField label="Font size" initial={currentPx("font-size")} onApply={(n) => applyClassUtility(`text-[${n}px]`)} />
-        <NumberField label="Letter spacing" initial={currentPx("letter-spacing")} onApply={(n) => applyClassUtility(`tracking-[${n}px]`)} />
-        <NumberField label="Line height" initial={currentPx("line-height")} onApply={(n) => applyClassUtility(`leading-[${n}px]`)} />
+        <NumberField label="Font size" initial={currentPx("font-size")} onApply={(n) => applyClassUtility(`text-[${n}px]`, { property: "fontSize", value: `${n}px` })} />
+        <NumberField label="Letter spacing" initial={currentPx("letter-spacing")} onApply={(n) => applyClassUtility(`tracking-[${n}px]`, { property: "letterSpacing", value: `${n}px` })} />
+        <NumberField label="Line height" initial={currentPx("line-height")} onApply={(n) => applyClassUtility(`leading-[${n}px]`, { property: "lineHeight", value: `${n}px` })} />
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 4 }}>Style</div>
           <div style={{ display: "flex", gap: 4 }}>
@@ -745,11 +798,11 @@ export function EditPanel({ el, onClose, onPatched }: Props) {
 
       {parentMode && (
         <Section id="position" title={`Position in parent (${parentMode})`} defaultOpen={false}>
-          <AlignButtons label="Align" current={computed?.getPropertyValue("align-self") ?? "auto"} onApply={(v) => applyClassUtility(`self-${v}`)} />
+          <AlignButtons label="Align" current={computed?.getPropertyValue("align-self") ?? "auto"} onApply={(v) => applyClassUtility(`self-${v}`, { property: "alignSelf", value: alignSelfCssValue(v) })} />
           {parentMode === "grid" && (
-            <AlignButtons label="Justify" current={computed?.getPropertyValue("justify-self") ?? "auto"} onApply={(v) => applyClassUtility(`justify-self-${v}`)} />
+            <AlignButtons label="Justify" current={computed?.getPropertyValue("justify-self") ?? "auto"} onApply={(v) => applyClassUtility(`justify-self-${v}`, { property: "justifySelf", value: alignSelfCssValue(v) })} />
           )}
-          <NumberField label="Order" unit="✓" initial={computed ? parseInt(computed.getPropertyValue("order"), 10) || 0 : 0} onApply={(n) => applyClassUtility(`order-[${n}]`)} />
+          <NumberField label="Order" unit="✓" initial={computed ? parseInt(computed.getPropertyValue("order"), 10) || 0 : 0} onApply={(n) => applyClassUtility(`order-[${n}]`, { property: "order", value: n })} />
         </Section>
       )}
 

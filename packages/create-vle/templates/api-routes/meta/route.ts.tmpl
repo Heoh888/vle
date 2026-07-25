@@ -1,0 +1,11 @@
+/** Dev-only endpoint exposing config the client-side overlay needs but can't read on its own (it runs in the browser, vle.config.ts runs on the server). See vle/devGate. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle/devGate";
+import { vleConfig } from "@/vle.config";
+
+export async function GET(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  return NextResponse.json({ ok: true, stylingMode: vleConfig.stylingMode });
+}
