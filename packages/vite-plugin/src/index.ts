@@ -194,7 +194,7 @@ export default function vlePlugin(options: VlePluginOptions = {}): Plugin {
   let config: VleConfig;
 
   return {
-    name: "vite-plugin-vle",
+    name: "vite-plugin-vle-editor",
     apply: "serve",
     enforce: "pre",
     // vle-editor/overlay/* ships as CommonJS — webpack (Next.js) handles that

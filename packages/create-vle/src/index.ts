@@ -5,13 +5,13 @@
  * bundler/router resolves them from there — there's no way to ship those
  * as pure npm-importable code. Everything else (the actual logic, the
  * overlay UI) ships as normal npm dependencies (`vle-editor`, and for Vite
- * projects `vite-plugin-vle`). Same shape as shadcn/ui's `init` for the
+ * projects `vite-plugin-vle-editor`). Same shape as shadcn/ui's `init` for the
  * same class of problem.
  *
  * Supports two frameworks, auto-detected:
  *  - Next.js App Router: thin app/api/vle/*\/route.ts re-exports (Next
  *    resolves API routes from the file tree, no other way to define them).
- *  - Vite + React: no route files needed at all — vite-plugin-vle serves
+ *  - Vite + React: no route files needed at all — vite-plugin-vle-editor serves
  *    the same endpoints itself via Vite's own dev server middleware.
  *
  * Deliberately does not touch layout.tsx/main.tsx or next.config.mjs/
@@ -184,16 +184,16 @@ function initVite(cwd: string, viteConfigFile: string): void {
   const entryHint = entry ? entry : "your app's root component";
 
   console.log(`
-No route files needed for Vite — vite-plugin-vle serves the /api/vle/*
+No route files needed for Vite — vite-plugin-vle-editor serves the /api/vle/*
 endpoints itself from Vite's own dev server. Two manual steps left:
 
 1. Install the packages (not yet on the npm registry — for now, point at
    this checkout or a tarball):
-     npm install vle-editor vite-plugin-vle
+     npm install vle-editor vite-plugin-vle-editor
 
 2. Add the plugin to ${viteConfigFile}:
 
-     import vle from "vite-plugin-vle";
+     import vle from "vite-plugin-vle-editor";
 
      export default defineConfig({
        plugins: [react(), vle()],

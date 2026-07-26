@@ -33,7 +33,7 @@ npx create-vle init
 `create-vle` detects your framework and writes only what that framework actually requires:
 
 - **Next.js App Router** — thin `app/api/vle/*/route.ts` re-exports and `vle.config.ts` (Next.js resolves API routes from the file tree — there's no other way to define them).
-- **Vite + React** — just `vle.config.ts`. `vite-plugin-vle` serves every endpoint itself from Vite's own dev server, no route files needed.
+- **Vite + React** — just `vle.config.ts`. `vite-plugin-vle-editor` serves every endpoint itself from Vite's own dev server, no route files needed.
 
 Either way, it prints the couple of manual steps left (mounting the overlay, wiring the framework's build hook) with exact snippets for your setup.
 
@@ -78,7 +78,7 @@ This only runs in development, only accepts requests from localhost, and is mean
 ```
 packages/
   core/          the "vle-editor" package — patch engine, agent/chat runners, design-system scanner, overlay UI
-  vite-plugin/   "vite-plugin-vle" — Vite adapter: build-time instrumentation + serves the dev endpoints itself
+  vite-plugin/   "vite-plugin-vle-editor" — Vite adapter: build-time instrumentation + serves the dev endpoints itself
   create-vle/    the npx scaffolder — writes the framework-specific glue into your project
 ```
 
