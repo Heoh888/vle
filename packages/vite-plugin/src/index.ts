@@ -30,6 +30,7 @@ import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, dis
 import { applyPatch, resolveProjectFile, type PatchRequest } from "vle-editor/patch";
 import { pushHistory, historyStatus, undo, redo } from "vle-editor/history";
 import { scanDesignSystem } from "vle-editor/designSystemScan";
+import { scanCreatives, resolveCreativeFile, copyCreativeToPublic } from "vle-editor/creativesScan";
 
 export type VlePluginOptions = Partial<Omit<VleConfigInput, "projectRoot">> & { projectRoot?: string };
 
@@ -37,6 +38,13 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(body));
+}
+
+function sendBinary(res: ServerResponse, status: number, body: Buffer, contentType: string): void {
+  res.statusCode = status;
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "no-store");
+  res.end(body);
 }
 
 function readJsonBody(req: IncomingMessage): Promise<any> {
@@ -85,6 +93,16 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
   }
   if (method === "GET" && pathname === "/api/vle/meta") {
     return sendJson(res, 200, { ok: true, stylingMode: config.stylingMode });
+  }
+  if (method === "GET" && pathname === "/api/vle/creatives") {
+    return sendJson(res, 200, { ok: true, assets: scanCreatives(config) });
+  }
+  if (method === "GET" && pathname === "/api/vle/creatives/file") {
+    const name = params.get("name");
+    if (!name) return sendJson(res, 400, { ok: false, reason: "missing name" });
+    const resolved = resolveCreativeFile(config, name);
+    if (!resolved) return sendJson(res, 404, { ok: false, reason: "not found" });
+    return sendBinary(res, 200, fs.readFileSync(resolved.absPath), resolved.mimeType);
   }
 
   // POST endpoints
@@ -185,6 +203,33 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
   }
   if (pathname === "/api/vle/redo") {
     return sendJson(res, 200, redo());
+  }
+  if (pathname === "/api/vle/creatives/insert") {
+    if (!body?.file || !body?.targetVleId || (body.position !== "before" && body.position !== "after") || !body?.creativeName || !body?.tag) {
+      return sendJson(res, 400, { ok: false, reason: "missing file/targetVleId/position/creativeName/tag" });
+    }
+    const copied = copyCreativeToPublic(config, body.creativeName);
+    if (!copied.ok) return sendJson(res, 422, { ok: false, reason: copied.reason });
+
+    const elementSnippet =
+      body.tag === "video"
+        ? `<video src="${copied.publicPath}" autoPlay muted loop playsInline />`
+        : `<img src="${copied.publicPath}" alt="" />`;
+
+    const absPath = resolveProjectFile(config.projectRoot, body.file);
+    const before = absPath && fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null;
+    const result = applyPatch(config.projectRoot, {
+      file: body.file,
+      kind: "insert",
+      targetVleId: body.targetVleId,
+      position: body.position,
+      elementSnippet,
+    });
+    if (result.ok && absPath && before !== null) {
+      const after = fs.readFileSync(absPath, "utf8");
+      pushHistory(absPath, before, after);
+    }
+    return sendJson(res, result.ok ? 200 : 422, { ...result, publicPath: copied.publicPath, ...historyStatus() });
   }
 
   return sendJson(res, 404, { ok: false, reason: "not found" });

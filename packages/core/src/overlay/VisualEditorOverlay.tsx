@@ -12,6 +12,7 @@ import { AgentJobPanel, type AgentJobView } from "./AgentJobPanel";
 import { ResponsivePreview } from "./ResponsivePreview";
 import { ChatPanel, type ChatView } from "./ChatPanel";
 import { DesignSystemPanel, VLE_COMPONENT_DND_MIME, type DraggedComponentPayload } from "./DesignSystemPanel";
+import { CreativesPanel, VLE_CREATIVE_DND_MIME, type DraggedCreativePayload } from "./CreativesPanel";
 import { InsertionLine, type InsertionIndicator } from "./InsertionLine";
 import { fileAndIdFor, postPatch } from "./patchClient";
 
@@ -109,6 +110,7 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
   // found fresh under the cursor on every dragover (document.elementFromPoint
   // equivalent via e.target + closest), not narrowed to one parent's siblings.
   const [designSystemOpen, setDesignSystemOpen] = useState(false);
+  const [creativesOpen, setCreativesOpen] = useState(false);
   const [insertIndicator, setInsertIndicator] = useState<InsertionIndicator | null>(null);
   // Hovering an element the server would refuse anyway (data-vle-nonliteral
   // — same .map()/conditional-parent check patch.ts's applyInsert makes,
@@ -280,16 +282,20 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
   // .types (not the actual payload) during dragover for security reasons —
   // the payload itself is only readable once "drop" actually fires.
   useEffect(() => {
+    const isOurDrag = (e: DragEvent) =>
+      !!e.dataTransfer && (e.dataTransfer.types.includes(VLE_COMPONENT_DND_MIME) || e.dataTransfer.types.includes(VLE_CREATIVE_DND_MIME));
+
     const onDragOver = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes(VLE_COMPONENT_DND_MIME)) return;
+      if (!isOurDrag(e)) return;
       e.preventDefault();
+      const dt = e.dataTransfer!;
 
       const hovered = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-vle-id]") : null;
       if (!hovered) {
         dropTargetRef.current = null;
         setInsertIndicator(null);
         setBlockedRect(null);
-        e.dataTransfer.dropEffect = "none";
+        dt.dropEffect = "none";
         return;
       }
 
@@ -298,11 +304,11 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
         setInsertIndicator(null);
         const r = hovered.getBoundingClientRect();
         setBlockedRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-        e.dataTransfer.dropEffect = "none";
+        dt.dropEffect = "none";
         return;
       }
 
-      e.dataTransfer.dropEffect = "copy";
+      dt.dropEffect = "copy";
       setBlockedRect(null);
       const r = hovered.getBoundingClientRect();
       const mid = r.top + r.height / 2;
@@ -312,14 +318,43 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
     };
 
     const onDrop = async (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes(VLE_COMPONENT_DND_MIME)) return;
+      if (!isOurDrag(e)) return;
       e.preventDefault();
-      const raw = e.dataTransfer.getData(VLE_COMPONENT_DND_MIME);
+      const dt = e.dataTransfer!;
+      const isCreative = dt.types.includes(VLE_CREATIVE_DND_MIME);
+      const raw = dt.getData(isCreative ? VLE_CREATIVE_DND_MIME : VLE_COMPONENT_DND_MIME);
       setInsertIndicator(null);
       setBlockedRect(null);
       const target = dropTargetRef.current;
       dropTargetRef.current = null;
       if (!raw || !target) return;
+
+      const { file, vleId: targetVleId } = fileAndIdFor(target.el);
+
+      if (isCreative) {
+        let payload: DraggedCreativePayload;
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          return;
+        }
+
+        const res = await fetch("/api/vle/creatives/insert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file,
+            targetVleId,
+            position: target.position,
+            creativeName: payload.name,
+            tag: payload.tag,
+          }),
+        });
+        const result = await res.json();
+        setHistory({ canUndo: !!result.canUndo, canRedo: !!result.canRedo });
+        if (!result.ok) window.alert(result.reason ?? "couldn't insert that here");
+        return;
+      }
 
       let payload: DraggedComponentPayload;
       try {
@@ -328,7 +363,6 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
         return;
       }
 
-      const { file, vleId: targetVleId } = fileAndIdFor(target.el);
       const result = await postPatch({
         file,
         kind: "insert",
@@ -500,11 +534,27 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
         >
           🧩 Design System
         </button>
+        <button
+          onClick={() => setCreativesOpen((v) => !v)}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 999,
+            border: "none",
+            background: creativesOpen ? "var(--vle-accent, #9b8ec4)" : "#111827",
+            color: "white",
+            fontSize: 12,
+            cursor: "pointer",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+          }}
+        >
+          🎨 Creatives
+        </button>
       </div>
 
       {responsiveOpen && <ResponsivePreview onClose={() => setResponsiveOpen(false)} />}
       {chatOpen && <ChatPanel chat={chat} onSend={sendChatMessage} onApply={applyChat} onDiscard={discardChat} onClose={() => setChatOpen(false)} />}
       {designSystemOpen && <DesignSystemPanel onClose={() => setDesignSystemOpen(false)} />}
+      {creativesOpen && <CreativesPanel onClose={() => setCreativesOpen(false)} />}
       <InsertionLine indicator={insertIndicator} />
       {blockedRect && (
         <div

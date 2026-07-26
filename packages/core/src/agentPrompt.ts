@@ -76,7 +76,7 @@ export function locateElement(projectRoot: string, file: string, vleId: string):
  * (stack, structure, conventions) — see VleConfig.promptContext. This
  * function doesn't know or care what that project actually is.
  */
-export function buildAgentPrompt(promptContext: string, located: LocatedElement, userPrompt: string): string {
+export function buildAgentPrompt(promptContext: string, located: LocatedElement, userPrompt: string, creativesDir: string): string {
   return `${promptContext} You have full read/write access to this checkout — it's an isolated git worktree made specifically for this task, so feel free to edit any file the request needs.
 
 The user clicked on this element in a browser-based visual editor and left a comment on it:
@@ -94,7 +94,8 @@ Guidelines:
 - Make the code changes needed to fulfill the request, wherever in the repo they belong.
 - Stay scoped to what this request actually needs — don't refactor unrelated code.
 - Do not run destructive git operations, do not push, do not touch CI/CD or deployment configs unless the request explicitly asks for that.
-- Leave your changes as uncommitted working-tree edits — do not commit.`;
+- Leave your changes as uncommitted working-tree edits — do not commit.
+${CREATIVES_GUIDELINE(creativesDir)}`;
 }
 
 /**
@@ -105,7 +106,7 @@ Guidelines:
  * adaptation" shouldn't produce an edit just because file-write access is
  * available.
  */
-export function buildChatPrompt(promptContext: string, userText: string): string {
+export function buildChatPrompt(promptContext: string, userText: string, creativesDir: string): string {
   return `${promptContext} You have full read/write access to this checkout — it's an isolated git worktree made specifically for this conversation, so feel free to edit any file if the request needs it.
 
 The developer's message may be a question that just needs looking into and answering (e.g. "do we handle mobile screens well?"), or a request to actually change code. Infer which from the message itself — only edit files if the request clearly asks for a change; otherwise just look and answer in plain text.
@@ -115,5 +116,19 @@ Developer: ${userText}
 Guidelines (only relevant if you do end up editing files):
 - Stay scoped to what the request actually needs — don't refactor unrelated code.
 - Do not run destructive git operations, do not push, do not touch CI/CD or deployment configs unless explicitly asked.
-- Leave any changes as uncommitted working-tree edits — do not commit.`;
+- Leave any changes as uncommitted working-tree edits — do not commit.
+${CREATIVES_GUIDELINE(creativesDir)}`;
+}
+
+/**
+ * Deliberately provider-agnostic — VLE doesn't know or care which MCP
+ * server (if any) the user has connected for image/video generation.
+ * Whatever's globally configured in the developer's own Claude Code
+ * (see `claude mcp add`/`claude mcp login`) is inherited by this headless
+ * `claude -p` call unchanged — nothing VLE-specific to wire up for that
+ * part. This guideline only covers where the *output* should land so the
+ * Creatives panel picks it up.
+ */
+function CREATIVES_GUIDELINE(creativesDir: string): string {
+  return `- If the request calls for generating an image or video (e.g. "animate the landing page", "add a hero background image") and you have an MCP tool available for that, use it and save the resulting file(s) into ${creativesDir}/ at the project root (create the directory if it doesn't exist yet). If you also wire the asset into the page yourself, reference it as a normal static path — do not leave it only reachable through a dev-only endpoint.`;
 }

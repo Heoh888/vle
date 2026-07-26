@@ -1,0 +1,26 @@
+/** Dev-only endpoint serving the raw bytes of one creative asset, for previews in the Creatives panel. ?name=<filename>, not a dynamic route segment — sidesteps Next.js's params-as-Promise-vs-object ambiguity across versions. See vle-editor/devGate / vle-editor/creativesScan. */
+import { NextRequest, NextResponse } from "next/server";
+import fs from "node:fs";
+import { devGate } from "vle-editor/devGate";
+import { resolveCreativeFile } from "vle-editor/creativesScan";
+import { vleConfig } from "@/vle.config";
+
+export async function GET(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  const name = req.nextUrl.searchParams.get("name");
+  if (!name) {
+    return NextResponse.json({ ok: false, reason: "missing name" }, { status: 400 });
+  }
+
+  const resolved = resolveCreativeFile(vleConfig, name);
+  if (!resolved) {
+    return NextResponse.json({ ok: false, reason: "not found" }, { status: 404 });
+  }
+
+  const body = fs.readFileSync(resolved.absPath);
+  return new NextResponse(body, {
+    headers: { "Content-Type": resolved.mimeType, "Cache-Control": "no-store" },
+  });
+}

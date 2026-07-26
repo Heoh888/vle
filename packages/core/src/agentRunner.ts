@@ -354,7 +354,7 @@ export function startAgentJob(config: VleConfig, req: StartAgentJobRequest): Sta
   if (!created.ok) return created;
   const { worktreePath, branch } = created;
 
-  const fullPrompt = buildAgentPrompt(config.promptContext, located, req.prompt);
+  const fullPrompt = buildAgentPrompt(config.promptContext, located, req.prompt, config.creativesDir);
   const record: JobRecord = {
     id: jobId,
     file: req.file,

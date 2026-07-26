@@ -1,6 +1,6 @@
 {
   "name": "vle-editor",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Visual Live Editor — an in-browser click-to-edit tool for Next.js apps, with an optional Claude Code agent wired in behind an isolated-worktree + diff-review + explicit-Apply gate.",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -45,6 +45,10 @@
     "./designSystemScan": {
       "types": "./dist/designSystemScan.d.ts",
       "default": "./dist/designSystemScan.js"
+    },
+    "./creativesScan": {
+      "types": "./dist/creativesScan.d.ts",
+      "default": "./dist/creativesScan.js"
     },
     "./babel-loader": "./dist/babel-loader.js",
     "./overlay/*": {

@@ -66,6 +66,26 @@ export interface VleConfig {
    * explicitly.
    */
   stylingMode: "tailwind" | "inline";
+
+  /**
+   * Directory (relative to `projectRoot`) where agent-generated creative
+   * assets (images/video from whatever MCP-connected generation tools the
+   * user has configured — Higgsfield, or anything else — VLE doesn't know
+   * or care which) get saved, for review in the Creatives panel. Not part
+   * of the git tree — `create-vle init` adds it to `.gitignore`.
+   */
+  creativesDir: string;
+
+  /**
+   * Directory (relative to `projectRoot`) that's served as static assets
+   * at the site root — the "public" folder convention both Next.js and
+   * Vite share. Used only when actually placing a creative onto the page
+   * (dragged from the panel, or an agent wiring one in): the file gets
+   * copied here from `creativesDir` first, so the reference in your JSX
+   * (`/filename.png`) is a real, permanent asset — not a request to a
+   * dev-only VLE endpoint that would 404 in production.
+   */
+  publicDir: string;
 }
 
 import { execFileSync } from "node:child_process";
@@ -77,6 +97,8 @@ const DEFAULT_PROMPT_CONTEXT =
 
 const DEFAULT_UI_DIRS = ["components/ui"];
 const DEFAULT_ACCENT = "#9b8ec4";
+const DEFAULT_CREATIVES_DIR = ".vle-creatives";
+const DEFAULT_PUBLIC_DIR = "public";
 const TAILWIND_CONFIG_CANDIDATES = ["tailwind.config.ts", "tailwind.config.js", "tailwind.config.mjs", "tailwind.config.cjs"];
 
 function detectStylingMode(projectRoot: string): "tailwind" | "inline" {
@@ -125,5 +147,7 @@ export function resolveConfig(input: VleConfigInput): VleConfig {
     pathAnchors: input.pathAnchors ?? [],
     accentColor: input.accentColor ?? DEFAULT_ACCENT,
     stylingMode: input.stylingMode ?? detectStylingMode(projectRoot),
+    creativesDir: input.creativesDir ?? DEFAULT_CREATIVES_DIR,
+    publicDir: input.publicDir ?? DEFAULT_PUBLIC_DIR,
   };
 }

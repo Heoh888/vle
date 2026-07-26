@@ -1,0 +1,65 @@
+/**
+ * Dev-only endpoint for dragging a creative onto the page. Two steps, in
+ * order: copy the file from creativesDir into publicDir (so the reference
+ * that lands in your JSX is a real, permanent static asset — not a
+ * request to this dev-only API that would 404 in production), then reuse
+ * the exact same "insert" patch machinery the design-system palette's
+ * drag-and-drop already uses. See vle-editor/devGate / vle-editor/creativesScan / vle-editor/patch.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import fs from "node:fs";
+import { devGate } from "vle-editor/devGate";
+import { copyCreativeToPublic } from "vle-editor/creativesScan";
+import { applyPatch, resolveProjectFile } from "vle-editor/patch";
+import { pushHistory, historyStatus } from "vle-editor/history";
+import { vleConfig } from "@/vle.config";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: {
+    file?: string;
+    targetVleId?: string;
+    position?: "before" | "after";
+    creativeName?: string;
+    tag?: "img" | "video";
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.file || !body.targetVleId || (body.position !== "before" && body.position !== "after") || !body.creativeName || !body.tag) {
+    return NextResponse.json({ ok: false, reason: "missing file/targetVleId/position/creativeName/tag" }, { status: 400 });
+  }
+
+  const copied = copyCreativeToPublic(vleConfig, body.creativeName);
+  if (!copied.ok) {
+    return NextResponse.json({ ok: false, reason: copied.reason }, { status: 422 });
+  }
+
+  const elementSnippet =
+    body.tag === "video"
+      ? `<video src="${copied.publicPath}" autoPlay muted loop playsInline />`
+      : `<img src="${copied.publicPath}" alt="" />`;
+
+  const absPath = resolveProjectFile(vleConfig.projectRoot, body.file);
+  const before = absPath && fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null;
+
+  const result = applyPatch(vleConfig.projectRoot, {
+    file: body.file,
+    kind: "insert",
+    targetVleId: body.targetVleId,
+    position: body.position,
+    elementSnippet,
+  });
+
+  if (result.ok && absPath && before !== null) {
+    const after = fs.readFileSync(absPath, "utf8");
+    pushHistory(absPath, before, after);
+  }
+
+  return NextResponse.json({ ...result, publicPath: copied.publicPath, ...historyStatus() }, { status: result.ok ? 200 : 422 });
+}

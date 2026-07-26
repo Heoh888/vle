@@ -92,12 +92,17 @@ function copyRouteTemplates(srcDir: string, destBase: string): { written: string
 
 function ensureGitignoreEntry(cwd: string): void {
   const gitignorePath = path.join(cwd, ".gitignore");
-  if (!fs.existsSync(gitignorePath)) return;
-  const contents = fs.readFileSync(gitignorePath, "utf8");
-  if (contents.includes(".vle-worktrees")) return;
-  const sep = contents.endsWith("\n") || contents === "" ? "" : "\n";
-  fs.writeFileSync(gitignorePath, `${contents}${sep}.vle-worktrees/\n`, "utf8");
-  console.log("  + appended .vle-worktrees/ to .gitignore");
+  let contents = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, "utf8") : "";
+
+  const entries = [".vle-worktrees/", ".vle-creatives/"];
+  for (const entry of entries) {
+    if (contents.includes(entry.replace(/\/$/, ""))) continue;
+    const sep = contents.endsWith("\n") || contents === "" ? "" : "\n";
+    contents += `${sep}${entry}\n`;
+    console.log(`  + appended ${entry} to .gitignore`);
+  }
+
+  fs.writeFileSync(gitignorePath, contents, "utf8");
 }
 
 function writeVleConfig(cwd: string): void {

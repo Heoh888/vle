@@ -17,6 +17,9 @@ export type { PatchRequest, PatchResult } from "./patch";
 export { scanDesignSystem } from "./designSystemScan";
 export type { DesignSystemComponent } from "./designSystemScan";
 
+export { scanCreatives, resolveCreativeFile, copyCreativeToPublic } from "./creativesScan";
+export type { CreativeAsset, CopyToPublicResult } from "./creativesScan";
+
 export { locateElement, buildAgentPrompt, buildChatPrompt } from "./agentPrompt";
 export type { LocatedElement } from "./agentPrompt";
 

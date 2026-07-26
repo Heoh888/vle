@@ -44,6 +44,7 @@ interface ChatSession {
   repoRoot: string;
   promptContext: string;
   pathAnchors: string[];
+  creativesDir: string;
   createdAt: number;
   diffText?: string;
   diffStat?: string;
@@ -93,6 +94,7 @@ export function startChatSession(config: VleConfig): { ok: true; chatId: string 
     repoRoot: config.repoRoot,
     promptContext: config.promptContext,
     pathAnchors: config.pathAnchors,
+    creativesDir: config.creativesDir,
     createdAt: Date.now(),
   };
   sessions().set(chatId, session);
@@ -102,7 +104,7 @@ export function startChatSession(config: VleConfig): { ok: true; chatId: string 
 export function getChatStatus(chatId: string): ChatPublicView | null {
   const session = sessions().get(chatId);
   if (!session) return null;
-  const { worktreePath: _worktreePath, branch: _branch, repoRoot: _repoRoot, promptContext: _promptContext, pathAnchors: _pathAnchors, ...pub } = session;
+  const { worktreePath: _worktreePath, branch: _branch, repoRoot: _repoRoot, promptContext: _promptContext, pathAnchors: _pathAnchors, creativesDir: _creativesDir, ...pub } = session;
   return pub;
 }
 
@@ -243,7 +245,7 @@ export function sendChatMessage(chatId: string, text: string): { ok: true } | { 
   // just be a question"); every message after that is resumed via
   // --resume, so the model already has that framing — sending it again
   // would just be noise, same reasoning as agentRunner.ts's refineJob.
-  const promptText = session.sessionId ? text : buildChatPrompt(session.promptContext, text);
+  const promptText = session.sessionId ? text : buildChatPrompt(session.promptContext, text, session.creativesDir);
   runChatTurn(session, promptText);
   return { ok: true };
 }
