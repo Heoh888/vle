@@ -46,10 +46,107 @@ interface ChatSession {
   pathAnchors: string[];
   creativesDir: string;
   createdAt: number;
+  updatedAt: number;
   diffText?: string;
   diffStat?: string;
   lastCostUsd?: number;
   error?: string;
+}
+
+const CHATS_DIRNAME = ".vle-chats";
+
+function chatsDir(repoRoot: string): string {
+  return path.join(repoRoot, CHATS_DIRNAME);
+}
+
+function chatFilePath(repoRoot: string, chatId: string): string {
+  return path.join(chatsDir(repoRoot), `${chatId}.json`);
+}
+
+/**
+ * Flushes a session to `<repoRoot>/.vle-chats/<id>.json` so it survives a
+ * page refresh (client loses its only reference to chatId) or a dev-server
+ * restart (in-memory sessions() Map is gone) — see loadPersistedSession
+ * and listChatSessions. Called after every state transition worth
+ * remembering (session creation, end of each turn); deliberately NOT
+ * called when a turn starts (status flips to "running") — a server
+ * restart mid-turn would otherwise leave a persisted "running" status with
+ * no process behind it, stuck forever with no way to recover short of
+ * Discard.
+ */
+function persistSession(session: ChatSession): void {
+  session.updatedAt = Date.now();
+  try {
+    fs.mkdirSync(chatsDir(session.repoRoot), { recursive: true });
+    fs.writeFileSync(chatFilePath(session.repoRoot, session.id), JSON.stringify(session), "utf8");
+  } catch {
+    // Best-effort — persistence is a convenience on top of the in-memory
+    // session, not a correctness requirement for the turn that's running.
+  }
+}
+
+function loadPersistedSession(repoRoot: string, chatId: string): ChatSession | null {
+  try {
+    return JSON.parse(fs.readFileSync(chatFilePath(repoRoot, chatId), "utf8")) as ChatSession;
+  } catch {
+    return null;
+  }
+}
+
+/** Looks in memory first, falls back to disk (and rehydrates the in-memory map) — the one path every public function below goes through so none of them need to care which case they're in. */
+function hydrateSession(chatId: string, repoRoot: string): ChatSession | undefined {
+  let session = sessions().get(chatId);
+  if (!session) {
+    const loaded = loadPersistedSession(repoRoot, chatId);
+    if (loaded) {
+      sessions().set(chatId, loaded);
+      session = loaded;
+    }
+  }
+  return session;
+}
+
+export interface ChatSummary {
+  id: string;
+  status: "idle" | "running" | "error";
+  preview: string;
+  messageCount: number;
+  createdAt: number;
+  updatedAt: number;
+  lastCostUsd?: number;
+  hasDiff: boolean;
+}
+
+/** Reads every persisted session under .vle-chats/ — the browsable "history" list. Sessions that are still Applied/Discarded have their file removed, so this only ever shows chats still worth resuming. */
+export function listChatSessions(repoRoot: string): ChatSummary[] {
+  let files: string[];
+  try {
+    files = fs.readdirSync(chatsDir(repoRoot)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return [];
+  }
+
+  const summaries: ChatSummary[] = [];
+  for (const f of files) {
+    try {
+      const session: ChatSession = JSON.parse(fs.readFileSync(path.join(chatsDir(repoRoot), f), "utf8"));
+      const firstUserText = session.messages.find((m) => m.role === "user")?.text ?? "(new chat)";
+      summaries.push({
+        id: session.id,
+        status: session.status,
+        preview: firstUserText.length > 60 ? `${firstUserText.slice(0, 60)}…` : firstUserText,
+        messageCount: session.messages.length,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt ?? session.createdAt,
+        lastCostUsd: session.lastCostUsd,
+        hasDiff: !!session.diffText?.trim(),
+      });
+    } catch {
+      // A corrupt/partially-written file shouldn't take down the whole list — skip it.
+    }
+  }
+  summaries.sort((a, b) => b.updatedAt - a.updatedAt);
+  return summaries;
 }
 
 const g = globalThis as unknown as {
@@ -96,15 +193,17 @@ export function startChatSession(config: VleConfig): { ok: true; chatId: string 
     pathAnchors: config.pathAnchors,
     creativesDir: config.creativesDir,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
   sessions().set(chatId, session);
+  persistSession(session);
   return { ok: true, chatId };
 }
 
-export function getChatStatus(chatId: string): ChatPublicView | null {
-  const session = sessions().get(chatId);
+export function getChatStatus(chatId: string, repoRoot: string): ChatPublicView | null {
+  const session = hydrateSession(chatId, repoRoot);
   if (!session) return null;
-  const { worktreePath: _worktreePath, branch: _branch, repoRoot: _repoRoot, promptContext: _promptContext, pathAnchors: _pathAnchors, creativesDir: _creativesDir, ...pub } = session;
+  const { worktreePath: _worktreePath, branch: _branch, repoRoot: _repoRoot, promptContext: _promptContext, pathAnchors: _pathAnchors, creativesDir: _creativesDir, updatedAt: _updatedAt, ...pub } = session;
   return pub;
 }
 
@@ -173,6 +272,8 @@ function finalizeTurn(session: ChatSession, resultLine: any): void {
   } else {
     session.status = "idle";
   }
+
+  persistSession(session);
 }
 
 function runChatTurn(session: ChatSession, promptText: string): void {
@@ -231,8 +332,8 @@ function runChatTurn(session: ChatSession, promptText: string): void {
   });
 }
 
-export function sendChatMessage(chatId: string, text: string): { ok: true } | { ok: false; reason: string } {
-  const session = sessions().get(chatId);
+export function sendChatMessage(chatId: string, text: string, repoRoot: string): { ok: true } | { ok: false; reason: string } {
+  const session = hydrateSession(chatId, repoRoot);
   if (!session) return { ok: false, reason: "chat session not found" };
   if (session.status === "running") return { ok: false, reason: "a turn is already running" };
 
@@ -250,8 +351,16 @@ export function sendChatMessage(chatId: string, text: string): { ok: true } | { 
   return { ok: true };
 }
 
-export function applyChatSession(chatId: string): { ok: true } | { ok: false; reason: string } {
-  const session = sessions().get(chatId);
+function removePersistedSession(session: ChatSession): void {
+  try {
+    fs.rmSync(chatFilePath(session.repoRoot, session.id), { force: true });
+  } catch {
+    // Best-effort — a leftover .vle-chats/<id>.json is harmless (gitignored), not worth failing Apply/Discard over.
+  }
+}
+
+export function applyChatSession(chatId: string, repoRoot: string): { ok: true } | { ok: false; reason: string } {
+  const session = hydrateSession(chatId, repoRoot);
   if (!session) return { ok: false, reason: "chat session not found" };
   if (session.status === "running") return { ok: false, reason: "a turn is still running" };
   if (!session.diffText || !session.diffText.trim()) return { ok: false, reason: "no changes to apply" };
@@ -269,12 +378,13 @@ export function applyChatSession(chatId: string): { ok: true } | { ok: false; re
 
   fs.rmSync(patchFile, { force: true });
   cleanupWorktree(session);
+  removePersistedSession(session);
   sessions().delete(chatId);
   return { ok: true };
 }
 
-export function discardChatSession(chatId: string): { ok: true } | { ok: false; reason: string } {
-  const session = sessions().get(chatId);
+export function discardChatSession(chatId: string, repoRoot: string): { ok: true } | { ok: false; reason: string } {
+  const session = hydrateSession(chatId, repoRoot);
   if (!session) return { ok: false, reason: "chat session not found" };
 
   const child = children().get(chatId);
@@ -284,6 +394,7 @@ export function discardChatSession(chatId: string): { ok: true } | { ok: false; 
   }
 
   cleanupWorktree(session);
+  removePersistedSession(session);
   sessions().delete(chatId);
   return { ok: true };
 }

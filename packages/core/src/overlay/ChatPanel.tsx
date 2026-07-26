@@ -22,12 +22,44 @@ export interface ChatView {
   error?: string;
 }
 
+export interface ChatSummaryView {
+  id: string;
+  status: "idle" | "running" | "error";
+  preview: string;
+  messageCount: number;
+  createdAt: number;
+  updatedAt: number;
+  lastCostUsd?: number;
+  hasDiff: boolean;
+}
+
 interface ChatPanelProps {
   chat: ChatView | null;
   onSend: (text: string) => void;
   onApply: () => void;
   onDiscard: () => void;
   onClose: () => void;
+  /** Fetches the "History" view's list — called fresh every time the view is switched to, deliberately not cached, so a chat's status/diff badge never shows stale info. */
+  onLoadHistory: () => Promise<ChatSummaryView[]>;
+  /** Switches the active chat: an id resumes that persisted session (GET /api/vle/chat?chatId=...), null starts fresh without discarding whatever was previously open — it stays alive on disk/in the History list either way. */
+  onSelectChat: (chatId: string | null) => void;
+}
+
+function timeAgo(ms: number): string {
+  const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return `${Math.floor(diffHr / 24)}d ago`;
+}
+
+function statusBadge(status: ChatSummaryView["status"], hasDiff: boolean): { label: string; color: string } {
+  if (status === "running") return { label: "● running", color: "#9b8ec4" };
+  if (status === "error") return { label: "⚠ error", color: "#F87171" };
+  if (hasDiff) return { label: "✓ has changes", color: "#34D399" };
+  return { label: "idle", color: "#6B7280" };
 }
 
 function StepsBlock({ steps }: { steps: string[] }) {
@@ -61,13 +93,30 @@ function StepsBlock({ steps }: { steps: string[] }) {
  * session — same worktree-then-diff-then-explicit-apply shape as
  * AgentJobPanel, just spanning a whole conversation instead of one message.
  */
-export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose }: ChatPanelProps) {
+export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose, onLoadHistory, onSelectChat }: ChatPanelProps) {
   const [text, setText] = useState("");
+  const [view, setView] = useState<"chat" | "history">("chat");
+  const [history, setHistory] = useState<ChatSummaryView[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [chat?.messages.length, chat?.currentSteps.length]);
+
+  const openHistory = () => {
+    setView("history");
+    setHistory(null);
+    setHistoryError(null);
+    onLoadHistory()
+      .then(setHistory)
+      .catch((err) => setHistoryError(String(err)));
+  };
+
+  const selectFromHistory = (id: string | null) => {
+    onSelectChat(id);
+    setView("chat");
+  };
 
   const running = chat?.status === "running";
 
@@ -97,11 +146,65 @@ export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose }: ChatPan
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, borderBottom: "1px solid #374151" }}>
         <strong style={{ fontSize: 13 }}>💭 Chat with agent</strong>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer" }}>
-          ✕
-        </button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <button
+            onClick={() => (view === "history" ? setView("chat") : openHistory())}
+            title="Past chats"
+            style={{ background: "none", border: "none", color: view === "history" ? "var(--vle-accent, #9b8ec4)" : "#9CA3AF", cursor: "pointer", fontSize: 11 }}
+          >
+            🕘 History
+          </button>
+          <button
+            onClick={() => selectFromHistory(null)}
+            title="Start a new chat (this one stays saved)"
+            style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: 11 }}
+          >
+            + New
+          </button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer" }}>
+            ✕
+          </button>
+        </div>
       </div>
 
+      {view === "history" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {historyError && <div style={{ fontSize: 12, color: "#F87171" }}>{historyError}</div>}
+          {!history && !historyError && <div style={{ fontSize: 12, color: "#6B7280" }}>Loading…</div>}
+          {history && history.length === 0 && !historyError && (
+            <div style={{ fontSize: 12, color: "#6B7280" }}>No saved chats yet — anything you start sticks around here until you Apply or Discard it.</div>
+          )}
+          {history?.map((h) => {
+            const badge = statusBadge(h.status, h.hasDiff);
+            return (
+              <button
+                key={h.id}
+                onClick={() => selectFromHistory(h.id)}
+                style={{
+                  textAlign: "left",
+                  background: "#1F2937",
+                  border: "1px solid #374151",
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                  cursor: "pointer",
+                  color: "white",
+                }}
+              >
+                <div style={{ fontSize: 12, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.preview}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#6B7280" }}>
+                  <span style={{ color: badge.color }}>{badge.label}</span>
+                  <span>
+                    {h.messageCount} msg{h.messageCount === 1 ? "" : "s"} · {timeAgo(h.updatedAt)}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {view === "chat" && (
+      <>
       <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
         {!chat && (
           <div style={{ fontSize: 12, color: "#6B7280" }}>
@@ -185,7 +288,6 @@ export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose }: ChatPan
           Send
         </button>
       </div>
-      <style>{`@keyframes vle-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }`}</style>
       {chat && !chat.diffText?.trim() && chat.status !== "running" && (
         <div style={{ padding: "0 12px 8px", display: "flex", justifyContent: "flex-end" }}>
           <button
@@ -196,6 +298,9 @@ export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose }: ChatPan
           </button>
         </div>
       )}
+      </>
+      )}
+      <style>{`@keyframes vle-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }`}</style>
     </div>,
     document.body
   );

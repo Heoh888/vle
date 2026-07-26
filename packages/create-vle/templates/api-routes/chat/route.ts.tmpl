@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "missing chatId" }, { status: 400 });
   }
 
-  const chat = getChatStatus(chatId);
+  const chat = getChatStatus(chatId, vleConfig.repoRoot);
   if (!chat) {
     return NextResponse.json({ ok: false, reason: "chat session not found" }, { status: 404 });
   }

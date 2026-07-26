@@ -94,7 +94,7 @@ function ensureGitignoreEntry(cwd: string): void {
   const gitignorePath = path.join(cwd, ".gitignore");
   let contents = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, "utf8") : "";
 
-  const entries = [".vle-worktrees/", ".vle-creatives/"];
+  const entries = [".vle-worktrees/", ".vle-creatives/", ".vle-chats/"];
   for (const entry of entries) {
     if (contents.includes(entry.replace(/\/$/, ""))) continue;
     const sep = contents.endsWith("\n") || contents === "" ? "" : "\n";

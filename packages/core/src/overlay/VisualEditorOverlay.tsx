@@ -10,7 +10,7 @@ import { preloadFontLibrary } from "./fontLibrary";
 import { CommentPin } from "./CommentPin";
 import { AgentJobPanel, type AgentJobView } from "./AgentJobPanel";
 import { ResponsivePreview } from "./ResponsivePreview";
-import { ChatPanel, type ChatView } from "./ChatPanel";
+import { ChatPanel, type ChatView, type ChatSummaryView } from "./ChatPanel";
 import { DesignSystemPanel, VLE_COMPONENT_DND_MIME, type DraggedComponentPayload } from "./DesignSystemPanel";
 import { CreativesPanel, VLE_CREATIVE_DND_MIME, type DraggedCreativePayload } from "./CreativesPanel";
 import { InsertionLine, type InsertionIndicator } from "./InsertionLine";
@@ -22,6 +22,8 @@ interface HistoryStatus {
 }
 
 const JOB_POLL_MS = 3000;
+/** Remembers the last chat the user was in so reopening the panel (or a page refresh) lands back in it instead of an empty chat — the session itself already survives on disk (see chatRunner.ts's .vle-chats/), this is just the client's pointer to which one. */
+const LAST_CHAT_KEY = "vle:lastChatId";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -213,6 +215,67 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
     }, JOB_POLL_MS);
     return () => clearInterval(interval);
   }, [chat]);
+
+  // Persists which chat is "active" to localStorage on every change — the
+  // session itself lives on disk (chatRunner.ts), this is just the client
+  // remembering which one to reopen. `chat` becoming null (Apply, Discard,
+  // or explicitly starting a new one) clears it the same way.
+  useEffect(() => {
+    try {
+      if (chat?.id) localStorage.setItem(LAST_CHAT_KEY, chat.id);
+      else localStorage.removeItem(LAST_CHAT_KEY);
+    } catch {
+      // Private browsing / storage disabled — auto-resume just won't work, not fatal.
+    }
+  }, [chat?.id]);
+
+  // Runs once per panel-open (not per `chat` change — reading `chat` here
+  // via closure, not as a dependency, is intentional: it's only checked at
+  // the moment the panel opens, so this can't loop once setChat below makes
+  // it non-null). Survives both a page refresh (client lost its chatId) and
+  // a dev-server restart (chatRunner.ts falls back to .vle-chats/<id>.json
+  // on the server side) — either way this GET just works or 404s.
+  useEffect(() => {
+    if (!chatOpen || chat) return;
+    let lastId: string | null = null;
+    try {
+      lastId = localStorage.getItem(LAST_CHAT_KEY);
+    } catch {
+      return;
+    }
+    if (!lastId) return;
+    (async () => {
+      const res = await fetch(`/api/vle/chat?chatId=${lastId}`);
+      const result = await res.json();
+      if (result.ok) {
+        setChat(result.chat);
+      } else {
+        try {
+          localStorage.removeItem(LAST_CHAT_KEY);
+        } catch {
+          // Nothing to clean up if storage isn't available.
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatOpen]);
+
+  const loadChatHistory = useCallback(async (): Promise<ChatSummaryView[]> => {
+    const res = await fetch("/api/vle/chat/list");
+    const result = await res.json();
+    if (!result.ok) throw new Error(result.reason ?? "failed to load chat history");
+    return result.chats;
+  }, []);
+
+  const selectChat = useCallback(async (chatId: string | null) => {
+    if (!chatId) {
+      setChat(null);
+      return;
+    }
+    const res = await fetch(`/api/vle/chat?chatId=${chatId}`);
+    const result = await res.json();
+    setChat(result.ok ? result.chat : null);
+  }, []);
 
   const sendChatMessage = useCallback(
     async (text: string) => {
@@ -552,7 +615,17 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
       </div>
 
       {responsiveOpen && <ResponsivePreview onClose={() => setResponsiveOpen(false)} />}
-      {chatOpen && <ChatPanel chat={chat} onSend={sendChatMessage} onApply={applyChat} onDiscard={discardChat} onClose={() => setChatOpen(false)} />}
+      {chatOpen && (
+        <ChatPanel
+          chat={chat}
+          onSend={sendChatMessage}
+          onApply={applyChat}
+          onDiscard={discardChat}
+          onClose={() => setChatOpen(false)}
+          onLoadHistory={loadChatHistory}
+          onSelectChat={selectChat}
+        />
+      )}
       {designSystemOpen && <DesignSystemPanel onClose={() => setDesignSystemOpen(false)} />}
       {creativesOpen && <CreativesPanel onClose={() => setCreativesOpen(false)} />}
       <InsertionLine indicator={insertIndicator} />

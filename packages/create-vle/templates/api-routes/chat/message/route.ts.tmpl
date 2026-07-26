@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { devGate } from "vle-editor/devGate";
 import { sendChatMessage } from "vle-editor/chatRunner";
+import { vleConfig } from "@/vle.config";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);
@@ -18,6 +19,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: "missing chatId/text" }, { status: 400 });
   }
 
-  const result = sendChatMessage(body.chatId, body.text);
+  const result = sendChatMessage(body.chatId, body.text, vleConfig.repoRoot);
   return NextResponse.json(result, { status: result.ok ? 200 : 422 });
 }

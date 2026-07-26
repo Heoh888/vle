@@ -39,5 +39,6 @@ export {
   sendChatMessage,
   applyChatSession,
   discardChatSession,
+  listChatSessions,
 } from "./chatRunner";
-export type { ChatMessage, ChatPublicView } from "./chatRunner";
+export type { ChatMessage, ChatPublicView, ChatSummary } from "./chatRunner";

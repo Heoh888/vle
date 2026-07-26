@@ -1,0 +1,12 @@
+/** Lists persisted chat sessions still open (not yet Applied/Discarded) — the Chat panel's "History" view. See vle-editor/devGate / vle-editor/chatRunner. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle-editor/devGate";
+import { listChatSessions } from "vle-editor/chatRunner";
+import { vleConfig } from "@/vle.config";
+
+export async function GET(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  return NextResponse.json({ ok: true, chats: listChatSessions(vleConfig.repoRoot) });
+}

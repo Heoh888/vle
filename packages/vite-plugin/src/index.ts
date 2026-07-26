@@ -26,7 +26,7 @@ import { instrumentJsx } from "vle-editor/instrumentJsx";
 import { checkDevGate } from "vle-editor/devGateCore";
 import { resolveConfig, type VleConfig, type VleConfigInput } from "vle-editor/config";
 import { startAgentJob, getJobStatus, refineJob, startPreview, applyJob, discardJob } from "vle-editor/agentRunner";
-import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession } from "vle-editor/chatRunner";
+import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession, listChatSessions } from "vle-editor/chatRunner";
 import { applyPatch, resolveProjectFile, type PatchRequest } from "vle-editor/patch";
 import { pushHistory, historyStatus, undo, redo } from "vle-editor/history";
 import { scanDesignSystem } from "vle-editor/designSystemScan";
@@ -83,9 +83,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
   if (method === "GET" && pathname === "/api/vle/chat") {
     const chatId = params.get("chatId");
     if (!chatId) return sendJson(res, 400, { ok: false, reason: "missing chatId" });
-    const chat = getChatStatus(chatId);
+    const chat = getChatStatus(chatId, config.repoRoot);
     if (!chat) return sendJson(res, 404, { ok: false, reason: "chat session not found" });
     return sendJson(res, 200, { ok: true, chat });
+  }
+  if (method === "GET" && pathname === "/api/vle/chat/list") {
+    return sendJson(res, 200, { ok: true, chats: listChatSessions(config.repoRoot) });
   }
   if (method === "GET" && pathname === "/api/vle/design-system") {
     const components = scanDesignSystem(config);
@@ -152,17 +155,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
     if (!body?.chatId || !body?.text || !String(body.text).trim()) {
       return sendJson(res, 400, { ok: false, reason: "missing chatId/text" });
     }
-    const result = sendChatMessage(body.chatId, body.text);
+    const result = sendChatMessage(body.chatId, body.text, config.repoRoot);
     return sendJson(res, result.ok ? 200 : 422, result);
   }
   if (pathname === "/api/vle/chat/apply") {
     if (!body?.chatId) return sendJson(res, 400, { ok: false, reason: "missing chatId" });
-    const result = applyChatSession(body.chatId);
+    const result = applyChatSession(body.chatId, config.repoRoot);
     return sendJson(res, result.ok ? 200 : 422, result);
   }
   if (pathname === "/api/vle/chat/discard") {
     if (!body?.chatId) return sendJson(res, 400, { ok: false, reason: "missing chatId" });
-    const result = discardChatSession(body.chatId);
+    const result = discardChatSession(body.chatId, config.repoRoot);
     return sendJson(res, result.ok ? 200 : 422, result);
   }
   if (pathname === "/api/vle/patch") {
