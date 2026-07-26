@@ -407,11 +407,47 @@ export function refineJob(jobId: string, prompt: string): { ok: true } | { ok: f
   return { ok: true };
 }
 
+const ENV_FILE_NAMES = [".env", ".env.local", ".env.development", ".env.development.local"];
+
+/**
+ * `.env*` files are gitignored in virtually every real project, so
+ * propagateUncommittedState's untracked-file copy (`git ls-files --others
+ * --exclude-standard`) deliberately skips them — same as git itself would.
+ * Found live: a preview server spawned from a job's worktree then runs
+ * with none of the app's real environment variables at all (auth secrets,
+ * API keys, feature flags), producing a preview that behaves nothing like
+ * the real app for anything env-dependent.
+ *
+ * Deliberately only called here, from startPreview — never from
+ * createWorktree/startAgentJob. The agent itself runs with
+ * --dangerously-skip-permissions and its tool I/O is persisted (session
+ * files, stream-json); giving it filesystem access to real secrets would
+ * be a genuine credential-exposure risk. By the time startPreview runs,
+ * job.status is already "done" — the agent process has already exited and
+ * never had these files on disk. The preview server is plain `next dev`,
+ * no LLM, nothing unsupervised, nothing logged.
+ */
+function copyEnvFilesForPreview(repoRoot: string, worktreePath: string, appDir: string): void {
+  const srcDir = path.join(repoRoot, appDir);
+  const destDir = path.join(worktreePath, appDir);
+  for (const name of ENV_FILE_NAMES) {
+    const src = path.join(srcDir, name);
+    if (!fs.existsSync(src)) continue;
+    try {
+      fs.copyFileSync(src, path.join(destDir, name));
+    } catch {
+      // Best-effort — missing env vars are a degraded preview, not worth failing the whole thing over.
+    }
+  }
+}
+
 export async function startPreview(jobId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const record = jobs().get(jobId);
   if (!record) return { ok: false, reason: "job not found" };
   if (record.status !== "done") return { ok: false, reason: `job is ${record.status}, not done` };
   if (previewProcesses().has(jobId)) return { ok: true }; // already starting/running — idempotent
+
+  copyEnvFilesForPreview(record.repoRoot, record.worktreePath, record.appDir);
 
   const appDir = path.join(record.worktreePath, record.appDir);
   const nodeModulesLink = path.join(appDir, "node_modules");
