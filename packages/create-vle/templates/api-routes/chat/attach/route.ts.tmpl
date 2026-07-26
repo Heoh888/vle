@@ -1,0 +1,24 @@
+/** Uploads a file into a chat session's worktree so the agent can read it (Claude Code's Read tool handles images natively) — base64 JSON, not multipart, so this stays dependency-free. See vle-editor/devGate / vle-editor/chatRunner. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle-editor/devGate";
+import { attachChatFile } from "vle-editor/chatRunner";
+import { vleConfig } from "@/vle.config";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: { chatId?: string; filename?: string; dataBase64?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.chatId || !body.filename || !body.dataBase64) {
+    return NextResponse.json({ ok: false, reason: "missing chatId/filename/dataBase64" }, { status: 400 });
+  }
+
+  const result = attachChatFile(body.chatId, vleConfig.repoRoot, body.filename, Buffer.from(body.dataBase64, "base64"));
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}

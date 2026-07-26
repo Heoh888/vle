@@ -26,11 +26,12 @@ import { instrumentJsx } from "vle-editor/instrumentJsx";
 import { checkDevGate } from "vle-editor/devGateCore";
 import { resolveConfig, type VleConfig, type VleConfigInput } from "vle-editor/config";
 import { startAgentJob, getJobStatus, refineJob, startPreview, applyJob, discardJob } from "vle-editor/agentRunner";
-import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession, listChatSessions } from "vle-editor/chatRunner";
+import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession, listChatSessions, attachChatFile } from "vle-editor/chatRunner";
 import { applyPatch, resolveProjectFile, type PatchRequest } from "vle-editor/patch";
 import { pushHistory, historyStatus, undo, redo } from "vle-editor/history";
 import { scanDesignSystem } from "vle-editor/designSystemScan";
 import { scanCreatives, resolveCreativeFile, copyCreativeToPublic } from "vle-editor/creativesScan";
+import { locateElement } from "vle-editor";
 
 export type VlePluginOptions = Partial<Omit<VleConfigInput, "projectRoot">> & { projectRoot?: string };
 
@@ -167,6 +168,19 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
     if (!body?.chatId) return sendJson(res, 400, { ok: false, reason: "missing chatId" });
     const result = discardChatSession(body.chatId, config.repoRoot);
     return sendJson(res, result.ok ? 200 : 422, result);
+  }
+  if (pathname === "/api/vle/chat/attach") {
+    if (!body?.chatId || !body?.filename || !body?.dataBase64) {
+      return sendJson(res, 400, { ok: false, reason: "missing chatId/filename/dataBase64" });
+    }
+    const result = attachChatFile(body.chatId, config.repoRoot, body.filename, Buffer.from(body.dataBase64, "base64"));
+    return sendJson(res, result.ok ? 200 : 422, result);
+  }
+  if (pathname === "/api/vle/element") {
+    if (!body?.file || !body?.vleId) return sendJson(res, 400, { ok: false, reason: "missing file/vleId" });
+    const located = locateElement(config.projectRoot, body.file, body.vleId);
+    if ("reason" in located) return sendJson(res, 422, { ok: false, reason: located.reason });
+    return sendJson(res, 200, { ok: true, ...located });
   }
   if (pathname === "/api/vle/patch") {
     const patchBody = body as PatchRequest;

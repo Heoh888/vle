@@ -40,5 +40,6 @@ export {
   applyChatSession,
   discardChatSession,
   listChatSessions,
+  attachChatFile,
 } from "./chatRunner";
-export type { ChatMessage, ChatPublicView, ChatSummary } from "./chatRunner";
+export type { ChatMessage, ChatPublicView, ChatSummary, AttachChatFileResult } from "./chatRunner";

@@ -149,6 +149,35 @@ export function listChatSessions(repoRoot: string): ChatSummary[] {
   return summaries;
 }
 
+const UPLOADS_DIRNAME = ".vle-chat-uploads";
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+export type AttachChatFileResult = { ok: true; relPath: string; name: string } | { ok: false; reason: string };
+
+/**
+ * Drops an uploaded file straight into the chat's own worktree — the agent
+ * already has full Read access there, including images (Claude Code's Read
+ * tool handles PNG/JPG/etc natively), so no multimodal wiring is needed
+ * here: the caller just references `relPath` in the next message's text
+ * and the agent reads it itself. Same "no separate content-addressed
+ * store, just a real file the agent can see" reasoning as Creatives.
+ */
+export function attachChatFile(chatId: string, repoRoot: string, filename: string, data: Buffer): AttachChatFileResult {
+  const session = hydrateSession(chatId, repoRoot);
+  if (!session) return { ok: false, reason: "chat session not found" };
+  if (data.byteLength > MAX_ATTACHMENT_BYTES) return { ok: false, reason: "file too large (max 10MB)" };
+
+  const safeName = `${Date.now().toString(36)}-${path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const dir = path.join(session.worktreePath, UPLOADS_DIRNAME);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, safeName), data);
+  } catch (err) {
+    return { ok: false, reason: `failed to save attachment: ${(err as Error).message}` };
+  }
+  return { ok: true, relPath: `${UPLOADS_DIRNAME}/${safeName}`, name: filename };
+}
+
 const g = globalThis as unknown as {
   __vleChatSessions?: Map<string, ChatSession>;
   __vleChatChildren?: Map<string, ChildProcess>;
@@ -258,6 +287,17 @@ function finalizeTurn(session: ChatSession, resultLine: any): void {
   // click away if it's genuinely not wanted.
   try {
     execFileSync("git", ["add", "-A"], { cwd: session.worktreePath, stdio: "pipe" });
+    // Uploaded attachments (see attachChatFile) are reference material for
+    // the agent to read, not something that belongs in the user's repo —
+    // found live: without this, a screenshot dropped in via 📎 shows up in
+    // the diff and would actually get committed on Apply. Unstage it right
+    // back out; the file itself stays on disk in the worktree so the agent
+    // can still read it on a later resumed turn.
+    try {
+      execFileSync("git", ["reset", "--", UPLOADS_DIRNAME], { cwd: session.worktreePath, stdio: "pipe" });
+    } catch {
+      // Nothing staged there yet (no attachment this session) — fine.
+    }
     session.diffText = execFileSync("git", ["diff", "--cached", "--binary"], { cwd: session.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
     session.diffStat = execFileSync("git", ["diff", "--cached", "--stat"], { cwd: session.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
   } catch {

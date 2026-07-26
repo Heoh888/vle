@@ -33,6 +33,17 @@ export interface ChatSummaryView {
   hasDiff: boolean;
 }
 
+/**
+ * Pending context for the *next* message — a file dropped in via 📎, or a
+ * page element picked via 📍. VisualEditorOverlay owns this state (it's
+ * the one with document-level picker access) and folds it into the actual
+ * outgoing text right before sending — this component only renders chips
+ * and reports add/remove intent upward.
+ */
+export type ChatAttachment =
+  | { kind: "file"; name: string; relPath: string }
+  | { kind: "element"; file: string; lineNumber: number; snippet: string; label: string };
+
 interface ChatPanelProps {
   chat: ChatView | null;
   onSend: (text: string) => void;
@@ -43,6 +54,12 @@ interface ChatPanelProps {
   onLoadHistory: () => Promise<ChatSummaryView[]>;
   /** Switches the active chat: an id resumes that persisted session (GET /api/vle/chat?chatId=...), null starts fresh without discarding whatever was previously open — it stays alive on disk/in the History list either way. */
   onSelectChat: (chatId: string | null) => void;
+  attachments: ChatAttachment[];
+  onRemoveAttachment: (index: number) => void;
+  onAttachFile: (file: File) => void;
+  attachError: string | null;
+  pickingElement: boolean;
+  onToggleElementPicker: () => void;
 }
 
 function timeAgo(ms: number): string {
@@ -93,12 +110,27 @@ function StepsBlock({ steps }: { steps: string[] }) {
  * session — same worktree-then-diff-then-explicit-apply shape as
  * AgentJobPanel, just spanning a whole conversation instead of one message.
  */
-export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose, onLoadHistory, onSelectChat }: ChatPanelProps) {
+export function ChatPanel({
+  chat,
+  onSend,
+  onApply,
+  onDiscard,
+  onClose,
+  onLoadHistory,
+  onSelectChat,
+  attachments,
+  onRemoveAttachment,
+  onAttachFile,
+  attachError,
+  pickingElement,
+  onToggleElementPicker,
+}: ChatPanelProps) {
   const [text, setText] = useState("");
   const [view, setView] = useState<"chat" | "history">("chat");
   const [history, setHistory] = useState<ChatSummaryView[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -257,7 +289,74 @@ export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose, onLoadHis
         <ChatDiffBar diffText={chat.diffText} diffStat={chat.diffStat} onApply={onApply} onDiscard={onDiscard} disabled={running} />
       )}
 
+      {(attachments.length > 0 || attachError) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 12px 0" }}>
+          {attachments.map((a, i) => (
+            <div
+              key={i}
+              title={a.kind === "file" ? a.name : a.snippet}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 10,
+                background: "#1F2937",
+                border: "1px solid #374151",
+                borderRadius: 999,
+                padding: "3px 8px",
+                maxWidth: 160,
+              }}
+            >
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {a.kind === "file" ? `📎 ${a.name}` : `📍 ${a.label}`}
+              </span>
+              <button
+                onClick={() => onRemoveAttachment(i)}
+                style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: 10, padding: 0, lineHeight: 1 }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {attachError && <div style={{ fontSize: 10, color: "#F87171" }}>{attachError}</div>}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 6, padding: 12, borderTop: "1px solid #374151" }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onAttachFile(file);
+            e.target.value = "";
+          }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={running}
+          title="Attach a file"
+          style={{ background: "none", border: "1px solid #374151", borderRadius: 4, color: running ? "#4B5563" : "#9CA3AF", cursor: running ? "default" : "pointer", padding: "0 10px", fontSize: 14 }}
+        >
+          📎
+        </button>
+        <button
+          onClick={onToggleElementPicker}
+          disabled={running}
+          title="Pick an element on the page to attach"
+          style={{
+            background: "none",
+            border: "1px solid " + (pickingElement ? "var(--vle-accent, #9b8ec4)" : "#374151"),
+            borderRadius: 4,
+            color: running ? "#4B5563" : pickingElement ? "var(--vle-accent, #9b8ec4)" : "#9CA3AF",
+            cursor: running ? "default" : "pointer",
+            padding: "0 10px",
+            fontSize: 14,
+          }}
+        >
+          📍
+        </button>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -267,7 +366,7 @@ export function ChatPanel({ chat, onSend, onApply, onDiscard, onClose, onLoadHis
               send();
             }
           }}
-          placeholder={running ? "Agent is working…" : "Ask or request a change…"}
+          placeholder={running ? "Agent is working…" : pickingElement ? "Pick an element…" : "Ask or request a change…"}
           disabled={running}
           rows={2}
           style={{ flex: 1, fontSize: 12, background: "#1F2937", color: "white", border: "1px solid #374151", borderRadius: 4, padding: 8, resize: "none" }}

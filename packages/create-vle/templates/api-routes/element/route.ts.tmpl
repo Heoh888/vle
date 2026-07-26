@@ -1,0 +1,28 @@
+/** Dev-only endpoint: given a clicked element's file/vleId, resolves the actual JSX snippet — used by the Chat panel's "pick an element" button to attach page context to a message, without starting a one-off agent job. See vle-editor/devGate / locateElement. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle-editor/devGate";
+import { locateElement } from "vle-editor";
+import { vleConfig } from "@/vle.config";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: { file?: string; vleId?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.file || !body.vleId) {
+    return NextResponse.json({ ok: false, reason: "missing file/vleId" }, { status: 400 });
+  }
+
+  const located = locateElement(vleConfig.projectRoot, body.file, body.vleId);
+  if ("reason" in located) {
+    return NextResponse.json({ ok: false, reason: located.reason }, { status: 422 });
+  }
+
+  return NextResponse.json({ ok: true, ...located });
+}

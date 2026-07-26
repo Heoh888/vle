@@ -10,7 +10,7 @@ import { preloadFontLibrary } from "./fontLibrary";
 import { CommentPin } from "./CommentPin";
 import { AgentJobPanel, type AgentJobView } from "./AgentJobPanel";
 import { ResponsivePreview } from "./ResponsivePreview";
-import { ChatPanel, type ChatView, type ChatSummaryView } from "./ChatPanel";
+import { ChatPanel, type ChatView, type ChatSummaryView, type ChatAttachment } from "./ChatPanel";
 import { DesignSystemPanel, VLE_COMPONENT_DND_MIME, type DraggedComponentPayload } from "./DesignSystemPanel";
 import { CreativesPanel, VLE_CREATIVE_DND_MIME, type DraggedCreativePayload } from "./CreativesPanel";
 import { InsertionLine, type InsertionIndicator } from "./InsertionLine";
@@ -20,6 +20,7 @@ interface HistoryStatus {
   canUndo: boolean;
   canRedo: boolean;
 }
+
 
 const JOB_POLL_MS = 3000;
 /** Remembers the last chat the user was in so reopening the panel (or a page refresh) lands back in it instead of an empty chat — the session itself already survives on disk (see chatRunner.ts's .vle-chats/), this is just the client's pointer to which one. */
@@ -105,6 +106,17 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
   // element, and a message might just be a question. See chatRunner.ts.
   const [chatOpen, setChatOpen] = useState(false);
   const [chat, setChat] = useState<ChatView | null>(null);
+
+  // Third independent picker — "attach this element to my next chat
+  // message" — same reasoning as commenting above (a fresh useInspector
+  // instance instead of threading a mode flag through one shared picker).
+  // Unlike commenting (which opens CommentPin and starts a brand-new
+  // one-off job), a pick here just adds a chip to the chat's pending
+  // attachments — the actual context goes out with whatever message the
+  // user sends next in the already-open chat.
+  const { inspecting: pickingElement, toggleInspecting: toggleElementPicker, hoveredEl: elementPickHoveredEl, selectedEl: elementPickTargetEl, selectElement: selectElementPickTarget } = useInspector();
+  const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
 
   // Design-system palette drag-and-drop — insertIndicator/dropTargetRef
   // mirror ReorderHandle's own indicator state, but the source here is an
@@ -277,41 +289,121 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
     setChat(result.ok ? result.chat : null);
   }, []);
 
+  // Shared by sendChatMessage and onAttachFile below — a file can be
+  // attached before the very first message is ever sent, which still
+  // needs a real worktree to upload into. Setting chat here (even with
+  // zero messages) the moment a session exists means chat?.id stays the
+  // single source of truth either way — sendChatMessage never ends up
+  // starting a second, orphaned session behind this one's back.
+  const ensureChatId = useCallback(async (): Promise<string | null> => {
+    if (chat?.id) return chat.id;
+    const startRes = await fetch("/api/vle/chat", { method: "POST" });
+    const startResult = await startRes.json();
+    if (!startResult.ok) {
+      setChat({ id: "", status: "error", messages: [], currentSteps: [], createdAt: Date.now(), error: startResult.reason });
+      return null;
+    }
+    setChat({ id: startResult.chatId, status: "idle", messages: [], currentSteps: [], createdAt: Date.now() });
+    return startResult.chatId;
+  }, [chat]);
+
   const sendChatMessage = useCallback(
     async (text: string) => {
-      let chatId = chat?.id;
-      if (!chatId) {
-        const startRes = await fetch("/api/vle/chat", { method: "POST" });
-        const startResult = await startRes.json();
-        if (!startResult.ok) {
-          setChat({ id: "", status: "error", messages: [], currentSteps: [], createdAt: Date.now(), error: startResult.reason });
-          return;
-        }
-        chatId = startResult.chatId;
-      }
+      const chatId = await ensureChatId();
+      if (!chatId) return;
+
+      // Attachments/element picks are folded into the actual text sent —
+      // both the agent and the transcript see the exact same thing, same
+      // as CommentPin embedding its snippet directly into the prompt.
+      const contextParts = chatAttachments.map((a) =>
+        a.kind === "file"
+          ? `[Attached file: ${a.relPath} — read it before responding]`
+          : `Referring to this element:\nFile: ${a.file}\nAround line: ${a.lineNumber}\n\`\`\`tsx\n${a.snippet}\n\`\`\``
+      );
+      const composedText = [...contextParts, text].join("\n\n");
+
       // Optimistic: show the user's message + a running state immediately,
       // rather than waiting for the first poll tick.
       setChat((prev) => ({
-        id: chatId!,
+        id: chatId,
         status: "running",
-        messages: [...(prev?.messages ?? []), { role: "user", text }],
+        messages: [...(prev?.messages ?? []), { role: "user", text: composedText }],
         currentSteps: [],
         createdAt: prev?.createdAt ?? Date.now(),
         diffText: prev?.diffText,
         diffStat: prev?.diffStat,
       }));
+      setChatAttachments([]);
       const res = await fetch("/api/vle/chat/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, text }),
+        body: JSON.stringify({ chatId, text: composedText }),
       });
       const result = await res.json();
       if (!result.ok) {
         setChat((prev) => (prev ? { ...prev, status: "error", error: result.reason ?? "failed to send message" } : prev));
       }
     },
-    [chat]
+    [chatAttachments, ensureChatId]
   );
+
+  const onAttachFile = useCallback(
+    async (file: File) => {
+      setAttachError(null);
+      const chatId = await ensureChatId();
+      if (!chatId) return;
+
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const dataBase64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+
+      const res = await fetch("/api/vle/chat/attach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, filename: file.name, dataBase64 }),
+      });
+      const result = await res.json();
+      if (!result.ok) {
+        setAttachError(result.reason ?? "failed to attach file");
+        return;
+      }
+      setChatAttachments((prev) => [...prev, { kind: "file", name: result.name, relPath: result.relPath }]);
+    },
+    [ensureChatId]
+  );
+
+  const onRemoveAttachment = useCallback((index: number) => {
+    setChatAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Picking an element attaches it to the chat instead of opening
+  // CommentPin — resolved server-side via locateElement (same lookup
+  // startAgentJob already does), so only file/vleId ever cross the wire.
+  useEffect(() => {
+    if (!elementPickTargetEl) return;
+    const { file, vleId } = fileAndIdFor(elementPickTargetEl);
+    selectElementPickTarget(null);
+    (async () => {
+      const res = await fetch("/api/vle/element", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file, vleId }),
+      });
+      const result = await res.json();
+      if (!result.ok) {
+        setAttachError(result.reason ?? "couldn't read that element");
+        return;
+      }
+      setChatAttachments((prev) => [
+        ...prev,
+        { kind: "element", file: result.file, lineNumber: result.lineNumber, snippet: result.snippet, label: `${result.file.split("/").pop()}:${result.lineNumber}` },
+      ]);
+    })();
+  }, [elementPickTargetEl, selectElementPickTarget]);
 
   const applyChat = useCallback(async () => {
     if (!chat) return;
@@ -624,6 +716,12 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
           onClose={() => setChatOpen(false)}
           onLoadHistory={loadChatHistory}
           onSelectChat={selectChat}
+          attachments={chatAttachments}
+          onRemoveAttachment={onRemoveAttachment}
+          onAttachFile={onAttachFile}
+          attachError={attachError}
+          pickingElement={pickingElement}
+          onToggleElementPicker={toggleElementPicker}
         />
       )}
       {designSystemOpen && <DesignSystemPanel onClose={() => setDesignSystemOpen(false)} />}
@@ -648,6 +746,7 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
 
       {inspecting && hoveredEl && <HighlightBox el={hoveredEl} color="var(--vle-accent, #9b8ec4)" label={hoveredEl.getAttribute("data-vle-loc") ?? undefined} />}
       {commenting && commentHoveredEl && <HighlightBox el={commentHoveredEl} color="#3B82F6" label={commentHoveredEl.getAttribute("data-vle-loc") ?? undefined} />}
+      {pickingElement && elementPickHoveredEl && <HighlightBox el={elementPickHoveredEl} color="#34D399" label={elementPickHoveredEl.getAttribute("data-vle-loc") ?? undefined} />}
       {commentTargetEl && !job && (
         <CommentPin
           el={commentTargetEl}
