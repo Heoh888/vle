@@ -155,11 +155,14 @@ projects to safely edit automatically:
 2. Mount the overlay in ${appDir}/layout.tsx, gated to development only
    (it writes to source files on disk — never let it run in production).
    Use the Next.js adapter, not the base export — it keeps the toolbar
-   from flashing visible for a frame during server-side rendering:
+   from flashing visible for a frame during server-side rendering. Also
+   exclude VLE_PREVIEW — it's set only on the throwaway \`next dev\` the
+   comment-to-agent flow's own Preview button spawns to show the agent's
+   diff in an iframe; that instance must not mount its own nested overlay:
 
      import { VisualEditorOverlay } from "vle-editor/overlay/adapters/next";
      ...
-     {process.env.NODE_ENV === "development" && <VisualEditorOverlay />}
+     {process.env.NODE_ENV === "development" && !process.env.VLE_PREVIEW && <VisualEditorOverlay />}
 
 3. Wire the dev-only babel loader into next.config.mjs so elements get
    tagged with data-vle-id/data-vle-loc. next.config.mjs is an ES module —

@@ -59,7 +59,10 @@ These touch files that vary too much across real projects to safely edit automat
 // it avoids a hydration flash by reading the URL in an SSR-safe way)
 import { VisualEditorOverlay } from "vle-editor/overlay/adapters/next";
 ...
-{process.env.NODE_ENV === "development" && <VisualEditorOverlay />}
+{/* VLE_PREVIEW is set only on the throwaway `next dev` the comment-to-agent
+    flow's own Preview button spawns to show the agent's diff in an iframe —
+    that instance must not mount its own nested overlay on top of itself. */}
+{process.env.NODE_ENV === "development" && !process.env.VLE_PREVIEW && <VisualEditorOverlay />}
 ```
 
 ```tsx
@@ -147,7 +150,11 @@ actually find in this repo rather than assuming a specific structure.
    a. Mount <VisualEditorOverlay /> in the root layout/entry point, gated to
       development only.
       - Next.js: import from "vle-editor/overlay/adapters/next" (the
-        SSR-safe adapter, not the base export).
+        SSR-safe adapter, not the base export). Also gate on
+        !process.env.VLE_PREVIEW alongside the NODE_ENV check — it's set
+        only on the throwaway `next dev` the comment-to-agent flow's own
+        Preview button spawns to show the agent's diff in an iframe, and
+        that instance must not mount its own nested overlay on itself.
       - Vite: import from "vle-editor/overlay/VisualEditorOverlay" (the base
         export is correct — Vite apps are pure client-rendered).
    b. Wire the build-time instrumentation:
