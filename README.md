@@ -23,21 +23,176 @@ Most visual editors for React either lock you into their own hosted format, or b
 - **Generate a design system** — no design system yet? The agent can study your app's actual colors, spacing, and typography and generate one, in its own reviewable diff.
 - **Undo/redo**, all edits included.
 
-## Quickstart
+## Install & run — step by step
+
+### 1. Install the package(s)
 
 ```bash
-cd your-app
+# Next.js
+npm install vle-editor
+
+# Vite + React
+npm install vle-editor vite-plugin-vle-editor
+```
+
+### 2. Scaffold the glue files
+
+```bash
 npx create-vle init
 ```
 
-`create-vle` detects your framework and writes only what that framework actually requires:
+This detects your framework and writes only what it actually needs:
 
-- **Next.js App Router** — thin `app/api/vle/*/route.ts` re-exports and `vle.config.ts` (Next.js resolves API routes from the file tree — there's no other way to define them).
-- **Vite + React** — just `vle.config.ts`. `vite-plugin-vle-editor` serves every endpoint itself from Vite's own dev server, no route files needed.
+- **Next.js App Router** — `vle.config.ts`, thin `app/api/vle/*/route.ts` re-exports (Next.js resolves API routes from the file tree — there's no other way to define them), and a `components/ui-kit/index.ts` placeholder (see the gotcha below).
+- **Vite + React** — just `vle.config.ts` and the placeholder. `vite-plugin-vle-editor` serves every endpoint itself from Vite's own dev server, no route files needed.
 
-Either way, it prints the couple of manual steps left (mounting the overlay, wiring the framework's build hook) with exact snippets for your setup.
+It also appends `.vle-worktrees/` to your `.gitignore`.
 
-Once running, open your app in dev mode and look for the toolbar in the bottom-right corner.
+### 3. Wire the two manual pieces
+
+These touch files that vary too much across real projects to safely edit automatically.
+
+**Mount the overlay**, gated to development only (it writes to source files on disk — never let it run in production):
+
+```tsx
+// Next.js — app/layout.tsx (use the Next adapter, not the base export —
+// it avoids a hydration flash by reading the URL in an SSR-safe way)
+import { VisualEditorOverlay } from "vle-editor/overlay/adapters/next";
+...
+{process.env.NODE_ENV === "development" && <VisualEditorOverlay />}
+```
+
+```tsx
+// Vite — src/main.tsx (the base export is correct here — Vite apps are
+// pure client-rendered, no SSR hydration to worry about)
+import { VisualEditorOverlay } from "vle-editor/overlay/VisualEditorOverlay";
+...
+{import.meta.env.DEV && <VisualEditorOverlay />}
+```
+
+**Wire the build-time instrumentation** that tags elements with `data-vle-id`:
+
+```js
+// Next.js — next.config.mjs
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+webpack(config, { dev }) {
+  if (dev) {
+    config.module.rules.unshift({
+      test: /\.[jt]sx$/,
+      exclude: [/node_modules/, /[\\/]app[\\/]api[\\/]/],
+      enforce: "pre",
+      use: [{ loader: require.resolve("vle-editor/babel-loader") }],
+    });
+  }
+  // See "Gotchas" below — skip this if your project has no path alias.
+  config.resolve.alias = { ...config.resolve.alias, "@": __dirname };
+  return config;
+},
+```
+
+```ts
+// Vite — vite.config.ts
+import vle from "vite-plugin-vle-editor";
+
+export default defineConfig({
+  plugins: [react(), vle()],
+});
+```
+
+### 4. Run it
+
+```bash
+npm run dev
+```
+
+Open the app in a browser — the toolbar appears in the bottom-right corner. Click **🖊 Inspect** and hover an element to confirm it's wired up.
+
+### Gotchas found the hard way
+
+Both of these are handled automatically if you use `create-vle init` and the snippets above verbatim — listed here so you know *why*, and can diagnose a variant setup:
+
+- **`Module not found: Can't resolve '@/components/ui-kit'` on Next.js.** The design-system palette's live previews use two dynamic imports keyed on `components/ui/${name}` and `components/ui-kit/${name}`. Webpack needs *some* file to exist at both paths at compile time — even before you've generated anything in `ui-kit`. `create-vle` scaffolds a placeholder `index.ts` there for exactly this reason.
+- **Same error persists even with the placeholder in place.** Next.js's own tsconfig-paths integration doesn't reliably apply your project's path alias to *dynamic* imports originating from inside `node_modules`, even though normal static imports resolve fine. The explicit `config.resolve.alias` line above (native webpack aliasing, which Context Module resolution fully supports) fixes it. Skip this line entirely if your project doesn't use a path alias.
+
+## Set up with an AI coding agent instead
+
+If you'd rather have an agent (Claude Code, Cursor, etc.) do the whole install — including adapting the two manual steps to your project's actual structure, and setting up mock data/auth if your project needs a backend or auth provider that isn't running locally — paste this in:
+
+```
+You are setting up VLE (Visual Live Editor) in this project — an in-browser
+click-to-edit tool for Next.js and Vite+React apps, with an optional
+AI-agent-assisted editing mode. Follow these steps, adapting to what you
+actually find in this repo rather than assuming a specific structure.
+
+1. Detect the framework: look for app/layout.tsx or src/app/layout.tsx
+   (Next.js App Router) vs a vite.config.* file (Vite + React). If neither
+   exists, stop and tell me this project isn't currently supported — VLE
+   requires one of these two.
+
+2. Install the package(s):
+   - Next.js: npm install vle-editor
+   - Vite: npm install vle-editor vite-plugin-vle-editor
+
+3. Run `npx create-vle init` from the project root. It writes vle.config.ts,
+   a components/ui-kit/index.ts placeholder, and (Next.js only) the
+   app/api/vle/*/route.ts files.
+
+4. Wire the two pieces create-vle cannot safely automate — read its printed
+   output for exact snippets, adapt paths to what you actually find:
+   a. Mount <VisualEditorOverlay /> in the root layout/entry point, gated to
+      development only.
+      - Next.js: import from "vle-editor/overlay/adapters/next" (the
+        SSR-safe adapter, not the base export).
+      - Vite: import from "vle-editor/overlay/VisualEditorOverlay" (the base
+        export is correct — Vite apps are pure client-rendered).
+   b. Wire the build-time instrumentation:
+      - Next.js (next.config.mjs): add the dev-only webpack rule for
+        vle-editor/babel-loader, AND add an explicit config.resolve.alias
+        entry for whatever path alias this project uses (commonly "@")
+        pointing at the project root. Next's own tsconfig-paths integration
+        does not reliably apply project aliases to *dynamic* imports from
+        inside node_modules, which the design-system palette's live
+        previews rely on. Skip this if the project has no path alias.
+      - Vite: add vle() from vite-plugin-vle-editor to the plugins array.
+
+5. Verify it actually works before reporting success — don't just claim it:
+   - Start the dev server.
+   - Confirm the toolbar appears in the bottom-right corner.
+   - Click "Inspect" and confirm elements highlight on hover.
+   - If anything 500s or shows "Module not found" mentioning
+     components/ui-kit or a path alias, that's a known gotcha — see the
+     VLE README's "Gotchas found the hard way" section, fix it before
+     reporting success.
+
+6. If this project is gated behind auth, and/or depends on backend services
+   that aren't running locally right now — so a developer can't actually
+   open the app and click around — set up a minimal, EXPLICIT opt-in mock:
+   - Find the project's real auth setup (NextAuth, Clerk, a custom check,
+     middleware, whatever it actually uses) and its data-fetching layer.
+   - Add a bypass/mock path gated behind a clearly-named env var (e.g.
+     MOCK_AUTH=1) that has to be set explicitly. Never bypass auth just
+     because NODE_ENV=development — real auth might genuinely be available
+     and working, don't silently override it.
+   - Prefer going through the real auth library's own machinery (e.g. a
+     NextAuth Credentials provider that always succeeds) over monkey-
+     patching internals — this keeps every downstream session check and
+     protected-route guard working completely unmodified.
+   - For any page fetching data from a backend that isn't running, add mock
+     API routes (or a mock fetcher) returning realistic data shaped to
+     match the project's own existing TypeScript types — gated behind the
+     same env flag, returning 404 when it's off, so this can never mask a
+     real missing integration outside of explicit opt-in.
+   - Document the flag with one line in .env.example.
+
+7. Report back: what you installed, exactly how you adapted the manual
+   wiring (and why, if you deviated from the snippets), and whether you set
+   up any mocks — including the exact env var name to flip on.
+```
 
 ## Configuration
 
