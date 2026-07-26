@@ -139,9 +139,11 @@ projects to safely edit automatically:
      {process.env.NODE_ENV === "development" && <VisualEditorOverlay />}
 
 3. Wire the dev-only babel loader into next.config.mjs so elements get
-   tagged with data-vle-id/data-vle-loc:
+   tagged with data-vle-id/data-vle-loc. next.config.mjs is an ES module —
+   plain \`require\` isn't defined there, so build one via createRequire:
 
-     import path from "node:path";
+     import { createRequire } from "node:module";
+     const require = createRequire(import.meta.url);
 
      webpack(config, { dev }) {
        if (dev) {
