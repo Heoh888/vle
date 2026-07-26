@@ -110,6 +110,28 @@ function writeVleConfig(cwd: string): void {
   console.log("  + vle.config.ts");
 }
 
+/**
+ * The design-system palette's "Generate design system" flow writes agent
+ * output into components/ui-kit/ — a folder that doesn't exist yet on a
+ * fresh project (nothing's been generated there). Found live: the overlay
+ * statically imports DesignSystemPanel, whose two dynamic imports
+ * (components/ui/${name}, components/ui-kit/${name}) both get analyzed by
+ * webpack the moment the app boots in dev, not lazily when the panel
+ * opens — webpack's context-module resolution needs *some* file to exist
+ * at that path to build a valid context, even for a branch never reached
+ * at runtime. Without this, every fresh Next.js project 500s on its very
+ * first dev-server request, before anyone's touched the design-system
+ * feature at all.
+ */
+function ensureUiKitPlaceholder(cwd: string): void {
+  const dir = path.join(cwd, "components", "ui-kit");
+  const indexPath = path.join(dir, "index.ts");
+  if (fs.existsSync(indexPath)) return;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(indexPath, "export {};\n", "utf8");
+  console.log("  + components/ui-kit/index.ts (placeholder — the design-system palette writes here once you generate one)");
+}
+
 function initNext(cwd: string, appDir: string): void {
   console.log(`Found Next.js App Router project (${appDir}/).\n`);
 
@@ -120,6 +142,7 @@ function initNext(cwd: string, appDir: string): void {
   for (const f of written) console.log(`  + ${appDir}/api/vle/${f}`);
   for (const f of skipped) console.log(`  · ${appDir}/api/vle/${f} already exists, skipping`);
 
+  ensureUiKitPlaceholder(cwd);
   ensureGitignoreEntry(cwd);
 
   console.log(`
@@ -179,6 +202,7 @@ function initVite(cwd: string, viteConfigFile: string): void {
   console.log(`Found a Vite project (${viteConfigFile}).\n`);
 
   writeVleConfig(cwd);
+  ensureUiKitPlaceholder(cwd);
   ensureGitignoreEntry(cwd);
 
   const entry = findViteEntry(cwd);
