@@ -1,7 +1,7 @@
-/** Continues a finished agent job's session with a follow-up instruction, in the same worktree. See vle/devGate / vle/agentRunner. */
+/** Continues a finished agent job's session with a follow-up instruction, in the same worktree. See vle-editor/devGate / vle-editor/agentRunner. */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { refineJob } from "vle/agentRunner";
+import { devGate } from "vle-editor/devGate";
+import { refineJob } from "vle-editor/agentRunner";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);

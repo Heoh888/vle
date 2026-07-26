@@ -51,7 +51,7 @@ export interface VisualEditorOverlayProps {
   /**
    * Overrides the ?vle_hide=1 / iframe check computeDefaultHide() makes by
    * default. Only frameworks that server-render this component need this —
-   * see vle/overlay/adapters/next's VisualEditorOverlay, which supplies an
+   * see vle-editor/overlay/adapters/next's VisualEditorOverlay, which supplies an
    * SSR-safe value here via next/navigation's useSearchParams(). Reading
    * window.location.search directly during an SSR pass would always
    * disagree with the client's first paint and produce a hydration

@@ -1,11 +1,11 @@
 /**
  * Dev-only endpoint that starts/polls a headless Claude Code agent job from
- * the visual editor's comment pin. See vle/devGate for the security gate
- * and vle/agentRunner for the actual worktree/spawn orchestration.
+ * the visual editor's comment pin. See vle-editor/devGate for the security gate
+ * and vle-editor/agentRunner for the actual worktree/spawn orchestration.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { startAgentJob, getJobStatus } from "vle/agentRunner";
+import { devGate } from "vle-editor/devGate";
+import { startAgentJob, getJobStatus } from "vle-editor/agentRunner";
 import { vleConfig } from "@/vle.config";
 
 export async function POST(req: NextRequest) {

@@ -18,7 +18,7 @@
     "vite": ">=4"
   },
   "dependencies": {
-    "vle": "*"
+    "vle-editor": "*"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

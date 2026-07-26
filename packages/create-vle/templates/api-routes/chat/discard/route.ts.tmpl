@@ -1,7 +1,7 @@
-/** Discards a chat session (kills the process if a turn is running) and cleans up its worktree. See vle/devGate / vle/chatRunner. */
+/** Discards a chat session (kills the process if a turn is running) and cleans up its worktree. See vle-editor/devGate / vle-editor/chatRunner. */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { discardChatSession } from "vle/chatRunner";
+import { devGate } from "vle-editor/devGate";
+import { discardChatSession } from "vle-editor/chatRunner";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);

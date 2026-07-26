@@ -1,7 +1,7 @@
-/** Sends the next message in a global chat session. See vle/devGate / vle/chatRunner. */
+/** Sends the next message in a global chat session. See vle-editor/devGate / vle-editor/chatRunner. */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { sendChatMessage } from "vle/chatRunner";
+import { devGate } from "vle-editor/devGate";
+import { sendChatMessage } from "vle-editor/chatRunner";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);

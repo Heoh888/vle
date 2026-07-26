@@ -1,7 +1,7 @@
-/** Dev-only endpoint listing the site's design-system palette. See vle/devGate / vle/designSystemScan. */
+/** Dev-only endpoint listing the site's design-system palette. See vle-editor/devGate / vle-editor/designSystemScan. */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { scanDesignSystem } from "vle/designSystemScan";
+import { devGate } from "vle-editor/devGate";
+import { scanDesignSystem } from "vle-editor/designSystemScan";
 import { vleConfig } from "@/vle.config";
 
 export async function GET(req: NextRequest) {

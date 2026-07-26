@@ -1,7 +1,7 @@
-/** Applies a chat session's accumulated diff to the live repo and ends the session. See vle/devGate / vle/chatRunner. */
+/** Applies a chat session's accumulated diff to the live repo and ends the session. See vle-editor/devGate / vle-editor/chatRunner. */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { applyChatSession } from "vle/chatRunner";
+import { devGate } from "vle-editor/devGate";
+import { applyChatSession } from "vle-editor/chatRunner";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);

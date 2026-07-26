@@ -1,10 +1,10 @@
 /**
  * Dev-only endpoint for the visual editor's global chat — starts/polls a
- * multi-turn conversation session. See vle/devGate and vle/chatRunner.
+ * multi-turn conversation session. See vle-editor/devGate and vle-editor/chatRunner.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { startChatSession, getChatStatus } from "vle/chatRunner";
+import { devGate } from "vle-editor/devGate";
+import { startChatSession, getChatStatus } from "vle-editor/chatRunner";
 import { vleConfig } from "@/vle.config";
 
 export async function POST(req: NextRequest) {

@@ -4,7 +4,7 @@
  * have to exist inside a consuming project's own file tree, because the
  * bundler/router resolves them from there — there's no way to ship those
  * as pure npm-importable code. Everything else (the actual logic, the
- * overlay UI) ships as normal npm dependencies (`vle`, and for Vite
+ * overlay UI) ships as normal npm dependencies (`vle-editor`, and for Vite
  * projects `vite-plugin-vle`). Same shape as shadcn/ui's `init` for the
  * same class of problem.
  *
@@ -128,14 +128,14 @@ projects to safely edit automatically:
 
 1. Install the packages (not yet on the npm registry — for now, point at
    this checkout or a tarball):
-     npm install vle
+     npm install vle-editor
 
 2. Mount the overlay in ${appDir}/layout.tsx, gated to development only
    (it writes to source files on disk — never let it run in production).
    Use the Next.js adapter, not the base export — it keeps the toolbar
    from flashing visible for a frame during server-side rendering:
 
-     import { VisualEditorOverlay } from "vle/overlay/adapters/next";
+     import { VisualEditorOverlay } from "vle-editor/overlay/adapters/next";
      ...
      {process.env.NODE_ENV === "development" && <VisualEditorOverlay />}
 
@@ -150,7 +150,7 @@ projects to safely edit automatically:
            test: /\\.[jt]sx$/,
            exclude: [/node_modules/, /[\\\\/]app[\\\\/]api[\\\\/]/],
            enforce: "pre",
-           use: [{ loader: require.resolve("vle/babel-loader") }],
+           use: [{ loader: require.resolve("vle-editor/babel-loader") }],
          });
        }
        return config;
@@ -189,7 +189,7 @@ endpoints itself from Vite's own dev server. Two manual steps left:
 
 1. Install the packages (not yet on the npm registry — for now, point at
    this checkout or a tarball):
-     npm install vle vite-plugin-vle
+     npm install vle-editor vite-plugin-vle
 
 2. Add the plugin to ${viteConfigFile}:
 
@@ -204,7 +204,7 @@ endpoints itself from Vite's own dev server. Two manual steps left:
    apps are pure client-rendered, so the base export (no adapter needed)
    is exactly right here:
 
-     import { VisualEditorOverlay } from "vle/overlay/VisualEditorOverlay";
+     import { VisualEditorOverlay } from "vle-editor/overlay/VisualEditorOverlay";
      ...
      {import.meta.env.DEV && <VisualEditorOverlay />}
 

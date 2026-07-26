@@ -1,7 +1,7 @@
-/** Applies a finished agent job's diff onto the live repo and cleans up its worktree. See vle/devGate / vle/agentRunner. */
+/** Applies a finished agent job's diff onto the live repo and cleans up its worktree. See vle-editor/devGate / vle-editor/agentRunner. */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { applyJob } from "vle/agentRunner";
+import { devGate } from "vle-editor/devGate";
+import { applyJob } from "vle-editor/agentRunner";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);

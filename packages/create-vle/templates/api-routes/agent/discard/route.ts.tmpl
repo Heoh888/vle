@@ -1,7 +1,7 @@
-/** Discards a finished/running agent job (kills the process if still running) and cleans up its worktree. See vle/devGate / vle/agentRunner. */
+/** Discards a finished/running agent job (kills the process if still running) and cleans up its worktree. See vle-editor/devGate / vle-editor/agentRunner. */
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { discardJob } from "vle/agentRunner";
+import { devGate } from "vle-editor/devGate";
+import { discardJob } from "vle-editor/agentRunner";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);

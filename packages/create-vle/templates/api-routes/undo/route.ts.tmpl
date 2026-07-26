@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { devGate } from "vle/devGate";
-import { undo } from "vle/history";
+import { devGate } from "vle-editor/devGate";
+import { undo } from "vle-editor/history";
 
 export async function POST(req: NextRequest) {
   const blocked = devGate(req);

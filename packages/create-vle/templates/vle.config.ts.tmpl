@@ -1,16 +1,17 @@
-import { resolveConfig } from "vle/config";
+import { resolveConfig } from "vle-editor/config";
 
 /**
- * VLE's configuration — see node_modules/vle/dist/config.d.ts for every
- * field. Only projectRoot is required; everything else below has a
- * sensible default. Uncomment and adjust anything that doesn't fit your
- * setup.
+ * VLE's configuration — see node_modules/vle-editor/dist/config.d.ts for
+ * every field. Only projectRoot is required; everything else below either
+ * has a sensible default or is auto-detected. Uncomment and adjust
+ * anything that doesn't fit your setup.
  */
 export const vleConfig = resolveConfig({
   projectRoot: process.cwd(),
 
-  // If this Next.js app lives inside a larger monorepo and you want the
-  // agent to see (and be able to edit) the whole repo, not just this app:
+  // repoRoot defaults to the real git top-level (auto-detected via `git
+  // rev-parse --show-toplevel`), not projectRoot — override only if that's
+  // somehow wrong for your setup:
   // repoRoot: path.resolve(process.cwd(), ".."),
 
   // One paragraph describing your project's stack/structure/conventions —
@@ -22,4 +23,9 @@ export const vleConfig = resolveConfig({
   // uiDirs: ["components/ui"],
 
   // accentColor: "#9b8ec4",
+
+  // stylingMode defaults to "tailwind" if a tailwind.config.* exists here,
+  // otherwise "inline" (real style={{...}} values — works regardless of
+  // your CSS methodology). Override only if the auto-detection guesses wrong:
+  // stylingMode: "inline",
 });

@@ -5,7 +5,7 @@
  * separate route files, this plugin does both jobs itself:
  *
  *  - `transform`: same JSX instrumentation as the webpack loader (shared
- *    via vle/instrumentJsx, not duplicated), applied to every .tsx/.jsx
+ *    via vle-editor/instrumentJsx, not duplicated), applied to every .tsx/.jsx
  *    file Vite's dev server serves.
  *  - `configureServer`: registers one middleware on Vite's own dev server
  *    (Vite's dev server is Express/Connect-compatible under the hood, this
@@ -22,14 +22,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import fs from "node:fs";
 import type { Plugin } from "vite";
-import { instrumentJsx } from "vle/instrumentJsx";
-import { checkDevGate } from "vle/devGateCore";
-import { resolveConfig, type VleConfig, type VleConfigInput } from "vle/config";
-import { startAgentJob, getJobStatus, refineJob, startPreview, applyJob, discardJob } from "vle/agentRunner";
-import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession } from "vle/chatRunner";
-import { applyPatch, resolveProjectFile, type PatchRequest } from "vle/patch";
-import { pushHistory, historyStatus, undo, redo } from "vle/history";
-import { scanDesignSystem } from "vle/designSystemScan";
+import { instrumentJsx } from "vle-editor/instrumentJsx";
+import { checkDevGate } from "vle-editor/devGateCore";
+import { resolveConfig, type VleConfig, type VleConfigInput } from "vle-editor/config";
+import { startAgentJob, getJobStatus, refineJob, startPreview, applyJob, discardJob } from "vle-editor/agentRunner";
+import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession } from "vle-editor/chatRunner";
+import { applyPatch, resolveProjectFile, type PatchRequest } from "vle-editor/patch";
+import { pushHistory, historyStatus, undo, redo } from "vle-editor/history";
+import { scanDesignSystem } from "vle-editor/designSystemScan";
 
 export type VlePluginOptions = Partial<Omit<VleConfigInput, "projectRoot">> & { projectRoot?: string };
 
@@ -197,10 +197,10 @@ export default function vlePlugin(options: VlePluginOptions = {}): Plugin {
     name: "vite-plugin-vle",
     apply: "serve",
     enforce: "pre",
-    // vle/overlay/* ships as CommonJS — webpack (Next.js) handles that
+    // vle-editor/overlay/* ships as CommonJS — webpack (Next.js) handles that
     // transparently, but Vite's dev server only converts CJS to
     // browser-usable ESM for dependencies it pre-bundles via esbuild
-    // (optimizeDeps). Found live: when `vle` is installed as a symlink
+    // (optimizeDeps). Found live: when `vle-editor` is installed as a symlink
     // (a local path/workspace install, not a real npm-registry install),
     // Vite's dependency crawler treats the resolved real path as project
     // "source" rather than "an installed dependency" and serves the raw
@@ -213,7 +213,7 @@ export default function vlePlugin(options: VlePluginOptions = {}): Plugin {
     config() {
       return {
         optimizeDeps: {
-          include: ["vle/overlay/VisualEditorOverlay"],
+          include: ["vle-editor/overlay/VisualEditorOverlay"],
         },
         // Defense in depth alongside config.ts's own repoRoot auto-detection
         // (which now walks up to the real git top-level so a worktree

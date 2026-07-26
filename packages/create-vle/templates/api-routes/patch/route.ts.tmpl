@@ -1,9 +1,9 @@
-/** Dev-only write-back endpoint for VLE (Visual Live Editor). See vle/devGate for the security gate. */
+/** Dev-only write-back endpoint for VLE (Visual Live Editor). See vle-editor/devGate for the security gate. */
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
-import { devGate } from "vle/devGate";
-import { applyPatch, resolveProjectFile, type PatchRequest } from "vle/patch";
-import { pushHistory, historyStatus } from "vle/history";
+import { devGate } from "vle-editor/devGate";
+import { applyPatch, resolveProjectFile, type PatchRequest } from "vle-editor/patch";
+import { pushHistory, historyStatus } from "vle-editor/history";
 import { vleConfig } from "@/vle.config";
 
 export async function POST(req: NextRequest) {
