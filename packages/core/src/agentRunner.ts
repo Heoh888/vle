@@ -102,7 +102,7 @@ export interface JobPublicView {
 export function propagateUncommittedState(repoRoot: string, worktreePath: string): void {
   let diff = "";
   try {
-    diff = execFileSync("git", ["diff", "HEAD"], { cwd: repoRoot, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
+    diff = execFileSync("git", ["diff", "HEAD", "--binary"], { cwd: repoRoot, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
   } catch {
     diff = "";
   }
@@ -283,7 +283,7 @@ function finishJob(record: JobRecord, stdout: string, stderr: string, exitCode: 
   // `git diff` alone ignores untracked (new) files.
   try {
     execFileSync("git", ["add", "-A"], { cwd: record.worktreePath, stdio: "pipe" });
-    record.diffText = execFileSync("git", ["diff", "--cached"], { cwd: record.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
+    record.diffText = execFileSync("git", ["diff", "--cached", "--binary"], { cwd: record.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
     record.diffStat = execFileSync("git", ["diff", "--cached", "--stat"], { cwd: record.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
     record.status = "done";
   } catch (err) {

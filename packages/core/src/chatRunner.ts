@@ -159,7 +159,7 @@ function finalizeTurn(session: ChatSession, resultLine: any): void {
   // click away if it's genuinely not wanted.
   try {
     execFileSync("git", ["add", "-A"], { cwd: session.worktreePath, stdio: "pipe" });
-    session.diffText = execFileSync("git", ["diff", "--cached"], { cwd: session.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
+    session.diffText = execFileSync("git", ["diff", "--cached", "--binary"], { cwd: session.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
     session.diffStat = execFileSync("git", ["diff", "--cached", "--stat"], { cwd: session.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
   } catch {
     // Best-effort — if this also fails there's genuinely nothing to show.
