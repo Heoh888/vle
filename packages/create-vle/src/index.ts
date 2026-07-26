@@ -163,10 +163,20 @@ projects to safely edit automatically:
 
 3. Wire the dev-only babel loader into next.config.mjs so elements get
    tagged with data-vle-id/data-vle-loc. next.config.mjs is an ES module —
-   plain \`require\` isn't defined there, so build one via createRequire:
+   plain \`require\` isn't defined there, so build one via createRequire.
+   Also add an explicit webpack resolve.alias for "@" — found live: Next's
+   own tsconfig-paths integration doesn't reliably apply your project's
+   "@/*" alias to *dynamic* imports (the design-system palette's live
+   previews use one) when the importing code lives inside node_modules,
+   even though normal static imports resolve fine. A native webpack alias
+   doesn't have that gap. Skip this if your project doesn't use an "@/*"
+   alias, or adjust "@" to whatever alias you actually use:
 
      import { createRequire } from "node:module";
+     import path from "node:path";
+     import { fileURLToPath } from "node:url";
      const require = createRequire(import.meta.url);
+     const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
      webpack(config, { dev }) {
        if (dev) {
@@ -177,6 +187,7 @@ projects to safely edit automatically:
            use: [{ loader: require.resolve("vle-editor/babel-loader") }],
          });
        }
+       config.resolve.alias = { ...config.resolve.alias, "@": __dirname };
        return config;
      }
 

@@ -1,6 +1,6 @@
 {
   "name": "create-vle",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Scaffolds VLE (Visual Live Editor) into a Next.js App Router or Vite + React project.",
   "license": "MIT",
   "bin": {
