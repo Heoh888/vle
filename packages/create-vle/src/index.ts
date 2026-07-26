@@ -126,8 +126,7 @@ function initNext(cwd: string, appDir: string): void {
 Three manual steps left — these touch files that vary too much across
 projects to safely edit automatically:
 
-1. Install the packages (not yet on the npm registry — for now, point at
-   this checkout or a tarball):
+1. Install the package:
      npm install vle-editor
 
 2. Mount the overlay in ${appDir}/layout.tsx, gated to development only
@@ -187,8 +186,7 @@ function initVite(cwd: string, viteConfigFile: string): void {
 No route files needed for Vite — vite-plugin-vle-editor serves the /api/vle/*
 endpoints itself from Vite's own dev server. Two manual steps left:
 
-1. Install the packages (not yet on the npm registry — for now, point at
-   this checkout or a tarball):
+1. Install the packages:
      npm install vle-editor vite-plugin-vle-editor
 
 2. Add the plugin to ${viteConfigFile}:
