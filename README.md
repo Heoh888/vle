@@ -23,6 +23,48 @@ Most visual editors for React either lock you into their own hosted format, or b
 - **Generate a design system** — no design system yet? The agent can study your app's actual colors, spacing, and typography and generate one, in its own reviewable diff.
 - **Undo/redo**, all edits included.
 
+## Keeping VLE fully local (recommended on a shared repo)
+
+If you're on a team repo and not everyone uses VLE, don't install it into your normal checkout — every file it needs (`vle.config.ts`, `app/api/vle/*`, the `layout.tsx`/`next.config.mjs` edits, `vle-editor` itself in `package.json`) would sit there as permanent local diffs or newly-tracked files nobody else asked for, and eventually someone has to ask "what's this?"
+
+The fix isn't gitignoring any of it — a `layout.tsx` import has to resolve for *everyone* at build time (React + webpack, not something a `.gitignore` entry can work around), so anything you conditionally import there needs `vle-editor` actually installed for teammates who never asked for it. Instead, do the entire install on a **separate branch, checked out in a separate `git worktree` outside your main checkout** — the exact same isolation primitive VLE itself uses for agent edits, just applied one level up, to the tool's own setup:
+
+```bash
+# from your main repo's root
+git branch local/devtools
+git worktree add ../<repo>-vle local/devtools    # a sibling directory, not inside your main checkout
+cd ../<repo>-vle/<path-to-your-app>               # e.g. frontend/, or the repo root
+npm install                                        # its own node_modules — costs disk/time, but keeps this branch's package.json (with vle-editor in it) actually correct
+npm install vle-editor                              # (+ vite-plugin-vle-editor for Vite) — commits into THIS branch's package.json, never your main one
+npx create-vle init
+# then the two manual steps from "Install & run" below, applied in this checkout
+git add -A && git commit -m "local: wire up VLE"
+```
+
+Install a local safety net so this branch can never leave your machine by accident — `.git/hooks/pre-push` lives in `.git/`, which is never itself version-controlled, so this is as invisible to the team as everything else here:
+
+```bash
+# from your main repo's root — .git is shared across all worktrees
+cat > .git/hooks/pre-push <<'EOF'
+#!/bin/sh
+while read local_ref local_sha remote_ref remote_sha; do
+  case "${local_ref#refs/heads/}" in
+    local/*) echo "refusing to push a local-only branch: ${local_ref#refs/heads/}" >&2; exit 1 ;;
+  esac
+done
+EOF
+chmod +x .git/hooks/pre-push
+```
+
+From here on: run `npm run dev` from `../<repo>-vle`, not your main checkout — that's where the toolbar lives. Real feature work keeps happening in your normal checkout, on normal branches, pushed as always; VLE never exists there. Every so often, pull in upstream changes without losing the VLE wiring:
+
+```bash
+git -C ../<repo>-vle fetch
+git -C ../<repo>-vle rebase origin/<your-base-branch>
+```
+
+The rest of this README (install steps, gotchas, the AI-agent prompt) applies exactly the same — just run it inside `../<repo>-vle` instead of your main checkout. The section right below is the same thing without the isolation, worth it only if you're the sole user of this repo and there's genuinely no one to explain it to.
+
 ## Install & run — step by step
 
 ### 1. Install the package(s)
@@ -132,18 +174,52 @@ click-to-edit tool for Next.js and Vite+React apps, with an optional
 AI-agent-assisted editing mode. Follow these steps, adapting to what you
 actually find in this repo rather than assuming a specific structure.
 
+0. Isolate the whole setup so it never touches the shared repo — this
+   matters even if I'm the only person using VLE right now, because every
+   file this needs (vle.config.ts, app/api/vle/*, the layout/webpack edits,
+   vle-editor itself in package.json) would otherwise sit as tracked
+   changes or new files that anyone pulling this repo has to see and ask
+   about. From the real git root (`git rev-parse --show-toplevel`, which
+   may not be this directory in a monorepo):
+     git branch local/devtools
+     git worktree add ../<repo-name>-vle local/devtools
+   (pick <repo-name> from the repo's own directory name.) Then install a
+   local safety hook so that branch can never be pushed by accident — this
+   lives in .git/hooks/, which is never itself version-controlled:
+     cat > .git/hooks/pre-push <<'EOF'
+     #!/bin/sh
+     while read local_ref local_sha remote_ref remote_sha; do
+       case "${local_ref#refs/heads/}" in
+         local/*) echo "refusing to push a local-only branch: ${local_ref#refs/heads/}" >&2; exit 1 ;;
+       esac
+     done
+     EOF
+     chmod +x .git/hooks/pre-push
+   Everything from step 1 onward happens INSIDE the new worktree
+   (../<repo-name>-vle, at whatever subpath corresponds to this project —
+   e.g. frontend/ if that's where package.json actually is), not in the
+   original checkout. Confirm with me only if the repo layout is unusual
+   enough that "the real git root" and "this project" aren't obviously
+   related (e.g. deeply nested monorepo) — otherwise just proceed.
+
 1. Detect the framework: look for app/layout.tsx or src/app/layout.tsx
    (Next.js App Router) vs a vite.config.* file (Vite + React). If neither
    exists, stop and tell me this project isn't currently supported — VLE
    requires one of these two.
 
-2. Install the package(s):
+2. Inside the worktree, install dependencies fresh (it has its own
+   node_modules, separate from the original checkout — don't try to share
+   or symlink it, this branch's package.json is about to diverge by
+   actually having vle-editor in it):
+     npm install
+   Then the package(s) themselves — this commits into the worktree
+   branch's package.json, never the original checkout's:
    - Next.js: npm install vle-editor
    - Vite: npm install vle-editor vite-plugin-vle-editor
 
-3. Run `npx create-vle init` from the project root. It writes vle.config.ts,
-   a components/ui-kit/index.ts placeholder, and (Next.js only) the
-   app/api/vle/*/route.ts files.
+3. Run `npx create-vle init` from the worktree's project root. It writes
+   vle.config.ts, a components/ui-kit/index.ts placeholder, and (Next.js
+   only) the app/api/vle/*/route.ts files.
 
 4. Wire the two pieces create-vle cannot safely automate — read its printed
    output for exact snippets, adapt paths to what you actually find:
@@ -167,18 +243,27 @@ actually find in this repo rather than assuming a specific structure.
         previews rely on. Skip this if the project has no path alias.
       - Vite: add vle() from vite-plugin-vle-editor to the plugins array.
 
-5. Verify it actually works before reporting success — don't just claim it:
-   - Start the dev server.
+5. Commit everything inside the worktree — it's on local/devtools, which
+   the pre-push hook from step 0 keeps off the remote, so a normal commit
+   here is exactly right, not something to avoid:
+     git add -A && git commit -m "local: wire up VLE"
+
+6. Verify it actually works before reporting success — don't just claim it:
+   - Start the dev server FROM THE WORKTREE (not the original checkout).
    - Confirm the toolbar appears in the bottom-right corner.
    - Click "Inspect" and confirm elements highlight on hover.
    - If anything 500s or shows "Module not found" mentioning
      components/ui-kit or a path alias, that's a known gotcha — see the
      VLE README's "Gotchas found the hard way" section, fix it before
      reporting success.
+   - Separately confirm the ORIGINAL checkout's `git status` is completely
+     unaffected by any of this — if it isn't, something in steps 0-5 wrote
+     to the wrong directory and needs fixing before reporting success.
 
-6. If this project is gated behind auth, and/or depends on backend services
+7. If this project is gated behind auth, and/or depends on backend services
    that aren't running locally right now — so a developer can't actually
-   open the app and click around — set up a minimal, EXPLICIT opt-in mock:
+   open the app and click around — set up a minimal, EXPLICIT opt-in mock
+   (inside the worktree, committed there same as everything else):
    - Find the project's real auth setup (NextAuth, Clerk, a custom check,
      middleware, whatever it actually uses) and its data-fetching layer.
    - Add a bypass/mock path gated behind a clearly-named env var (e.g.
@@ -196,9 +281,12 @@ actually find in this repo rather than assuming a specific structure.
      real missing integration outside of explicit opt-in.
    - Document the flag with one line in .env.example.
 
-7. Report back: what you installed, exactly how you adapted the manual
-   wiring (and why, if you deviated from the snippets), and whether you set
-   up any mocks — including the exact env var name to flip on.
+8. Report back: the worktree's path and branch name, what you installed,
+   exactly how you adapted the manual wiring (and why, if you deviated from
+   the snippets), whether you set up any mocks (with the exact env var
+   name), and an explicit reminder that `local/devtools` must never be
+   pushed — the pre-push hook blocks it, but I should still know it's
+   there and why.
 ```
 
 ## Configuration

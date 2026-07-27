@@ -21,6 +21,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const TEMPLATES_DIR = path.join(__dirname, "..", "templates");
 
@@ -137,6 +138,31 @@ function ensureUiKitPlaceholder(cwd: string): void {
   console.log("  + components/ui-kit/index.ts (placeholder — the design-system palette writes here once you generate one)");
 }
 
+/**
+ * Nudge, not a gate — on a shared repo, everything this command just wrote
+ * (vle.config.ts, app/api/vle/*, plus the two manual edits still to come)
+ * sits as tracked changes or new files nobody else asked for. Cheapest
+ * signal for "you're probably not already isolated": the current branch
+ * doesn't look like a dedicated local-only one. Doesn't block anything —
+ * just points at the README section for anyone who hasn't seen it yet.
+ */
+function printLocalBranchTip(cwd: string): void {
+  let branch = "";
+  try {
+    branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd, stdio: ["ignore", "pipe", "ignore"] })
+      .toString("utf8")
+      .trim();
+  } catch {
+    return; // not a git repo (yet) — nothing useful to say
+  }
+  if (branch.startsWith("local/")) return;
+  console.log(
+    `Tip: if this repo is shared with people who don't use VLE, consider running\n` +
+      `this inside a dedicated local-only branch/worktree instead — see the README's\n` +
+      `"Keeping VLE fully local" section. Nothing above changes, just *where* you run it.\n`
+  );
+}
+
 function initNext(cwd: string, appDir: string): void {
   console.log(`Found Next.js App Router project (${appDir}/).\n`);
 
@@ -208,6 +234,7 @@ inside an isolated git worktree, and nothing touches your real files until
 you review the diff and click Apply. Make sure the \`claude\` CLI is
 installed and logged in first.
 `);
+  printLocalBranchTip(cwd);
 }
 
 function findViteEntry(cwd: string): string | null {
@@ -260,6 +287,7 @@ inside an isolated git worktree, and nothing touches your real files until
 you review the diff and click Apply. Make sure the \`claude\` CLI is
 installed and logged in first.
 `);
+  printLocalBranchTip(cwd);
 }
 
 function init(): void {
