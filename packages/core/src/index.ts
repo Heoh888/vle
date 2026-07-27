@@ -41,5 +41,6 @@ export {
   discardChatSession,
   listChatSessions,
   attachChatFile,
+  startChatPreview,
 } from "./chatRunner";
 export type { ChatMessage, ChatPublicView, ChatSummary, AttachChatFileResult } from "./chatRunner";

@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { buildChatPrompt } from "./agentPrompt";
-import { createWorktree, cleanupWorktree, killProcessTree } from "./agentRunner";
+import { createWorktree, cleanupWorktree, killProcessTree, startPreviewServer, stopPreviewServer, previewSymlinkPath } from "./agentRunner";
 import type { VleConfig } from "./config";
 
 const MAX_BUDGET_USD = "2";
@@ -42,6 +42,8 @@ interface ChatSession {
   worktreePath: string;
   branch: string;
   repoRoot: string;
+  /** `projectRoot`'s path relative to `repoRoot` — see VleConfig.appDir. Needed for startChatPreview (relocating the app dir inside this session's worktree), same reasoning as agentRunner.ts's JobRecord.appDir. */
+  appDir: string;
   promptContext: string;
   pathAnchors: string[];
   creativesDir: string;
@@ -51,6 +53,9 @@ interface ChatSession {
   diffStat?: string;
   lastCostUsd?: number;
   error?: string;
+  previewPort?: number;
+  previewStatus?: "starting" | "ready" | "error";
+  previewError?: string;
 }
 
 const CHATS_DIRNAME = ".vle-chats";
@@ -203,6 +208,9 @@ export interface ChatPublicView {
   diffStat?: string;
   lastCostUsd?: number;
   error?: string;
+  previewPort?: number;
+  previewStatus?: "starting" | "ready" | "error";
+  previewError?: string;
 }
 
 export function startChatSession(config: VleConfig): { ok: true; chatId: string } | { ok: false; reason: string } {
@@ -218,6 +226,7 @@ export function startChatSession(config: VleConfig): { ok: true; chatId: string 
     worktreePath: created.worktreePath,
     branch: created.branch,
     repoRoot: config.repoRoot,
+    appDir: config.appDir,
     promptContext: config.promptContext,
     pathAnchors: config.pathAnchors,
     creativesDir: config.creativesDir,
@@ -232,7 +241,7 @@ export function startChatSession(config: VleConfig): { ok: true; chatId: string 
 export function getChatStatus(chatId: string, repoRoot: string): ChatPublicView | null {
   const session = hydrateSession(chatId, repoRoot);
   if (!session) return null;
-  const { worktreePath: _worktreePath, branch: _branch, repoRoot: _repoRoot, promptContext: _promptContext, pathAnchors: _pathAnchors, creativesDir: _creativesDir, updatedAt: _updatedAt, ...pub } = session;
+  const { worktreePath: _worktreePath, branch: _branch, repoRoot: _repoRoot, appDir: _appDir, promptContext: _promptContext, pathAnchors: _pathAnchors, creativesDir: _creativesDir, updatedAt: _updatedAt, ...pub } = session;
   return pub;
 }
 
@@ -297,6 +306,15 @@ function finalizeTurn(session: ChatSession, resultLine: any): void {
       execFileSync("git", ["reset", "--", UPLOADS_DIRNAME], { cwd: session.worktreePath, stdio: "pipe" });
     } catch {
       // Nothing staged there yet (no attachment this session) — fine.
+    }
+    // Same reasoning, different leak: startChatPreview's node_modules
+    // symlink (see agentRunner.ts's previewSymlinkPath) isn't excluded by
+    // the real repo's own .gitignore either — a symlink named node_modules
+    // doesn't match a `node_modules/` (directories-only) pattern.
+    try {
+      execFileSync("git", ["reset", "--", previewSymlinkPath(session.appDir)], { cwd: session.worktreePath, stdio: "pipe" });
+    } catch {
+      // No preview has run yet this session — nothing staged there. Fine.
     }
     session.diffText = execFileSync("git", ["diff", "--cached", "--binary"], { cwd: session.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
     session.diffStat = execFileSync("git", ["diff", "--cached", "--stat"], { cwd: session.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
@@ -399,6 +417,20 @@ function removePersistedSession(session: ChatSession): void {
   }
 }
 
+/**
+ * Unlike agent jobs (one comment, one job, apply-and-done), a chat is meant
+ * to keep going — Apply here does NOT tear down the session. The worktree,
+ * branch, and .vle-chats/<id>.json all stay put; only the diff clears.
+ *
+ * finalizeTurn's `git diff --cached` is cumulative from the worktree's
+ * original baseline commit — that's exactly right for a single Apply, but
+ * without this commit, chatting on after an Apply would keep including the
+ * already-applied content in every future diff too (and a second Apply
+ * would then fail outright — the real repo no longer matches what the
+ * patch expects). Committing what's currently staged (it's the exact
+ * content that was just applied) gives the worktree a fresh baseline, so
+ * the next turn's diff is only what changes after this point.
+ */
 export function applyChatSession(chatId: string, repoRoot: string): { ok: true } | { ok: false; reason: string } {
   const session = hydrateSession(chatId, repoRoot);
   if (!session) return { ok: false, reason: "chat session not found" };
@@ -417,9 +449,18 @@ export function applyChatSession(chatId: string, repoRoot: string): { ok: true }
   }
 
   fs.rmSync(patchFile, { force: true });
-  cleanupWorktree(session);
-  removePersistedSession(session);
-  sessions().delete(chatId);
+
+  try {
+    execFileSync("git", ["commit", "-m", "vle: applied chat turn"], { cwd: session.worktreePath, stdio: "pipe" });
+  } catch {
+    // Best-effort — e.g. no git identity configured in the worktree. The
+    // real repo already has the patch either way; worst case a *later*
+    // apply in this same chat re-includes already-applied content, no
+    // worse than today's behavior.
+  }
+  session.diffText = "";
+  session.diffStat = "";
+  persistSession(session);
   return { ok: true };
 }
 
@@ -432,9 +473,17 @@ export function discardChatSession(chatId: string, repoRoot: string): { ok: true
     killProcessTree(child);
     children().delete(chatId);
   }
+  stopPreviewServer(`chat:${chatId}`);
 
   cleanupWorktree(session);
   removePersistedSession(session);
   sessions().delete(chatId);
   return { ok: true };
+}
+
+export async function startChatPreview(chatId: string, repoRoot: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const session = hydrateSession(chatId, repoRoot);
+  if (!session) return { ok: false, reason: "chat session not found" };
+  if (session.status === "running") return { ok: false, reason: "a turn is still running" };
+  return startPreviewServer(`chat:${chatId}`, session);
 }

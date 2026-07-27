@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-vle-editor",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Vite adapter for VLE (Visual Live Editor) — JSX instrumentation + the /api/vle/* dev endpoints, both wired into Vite's own dev server, no separate route files needed.",
   "license": "MIT",
   "type": "module",

@@ -20,6 +20,9 @@ export interface ChatView {
   diffStat?: string;
   lastCostUsd?: number;
   error?: string;
+  previewPort?: number;
+  previewStatus?: "starting" | "ready" | "error";
+  previewError?: string;
 }
 
 export interface ChatSummaryView {
@@ -49,6 +52,7 @@ interface ChatPanelProps {
   onSend: (text: string) => void;
   onApply: () => void;
   onDiscard: () => void;
+  onPreview: () => void;
   onClose: () => void;
   /** Fetches the "History" view's list — called fresh every time the view is switched to, deliberately not cached, so a chat's status/diff badge never shows stale info. */
   onLoadHistory: () => Promise<ChatSummaryView[]>;
@@ -115,6 +119,7 @@ export function ChatPanel({
   onSend,
   onApply,
   onDiscard,
+  onPreview,
   onClose,
   onLoadHistory,
   onSelectChat,
@@ -286,7 +291,17 @@ export function ChatPanel({
       </div>
 
       {chat?.diffText?.trim() && (
-        <ChatDiffBar diffText={chat.diffText} diffStat={chat.diffStat} onApply={onApply} onDiscard={onDiscard} disabled={running} />
+        <ChatDiffBar
+          diffText={chat.diffText}
+          diffStat={chat.diffStat}
+          onApply={onApply}
+          onDiscard={onDiscard}
+          onPreview={onPreview}
+          previewPort={chat.previewPort}
+          previewStatus={chat.previewStatus}
+          previewError={chat.previewError}
+          disabled={running}
+        />
       )}
 
       {(attachments.length > 0 || attachError) && (
@@ -405,20 +420,54 @@ export function ChatPanel({
   );
 }
 
-function ChatDiffBar({ diffText, diffStat, onApply, onDiscard, disabled }: {
+function ChatDiffBar({
+  diffText,
+  diffStat,
+  onApply,
+  onDiscard,
+  onPreview,
+  previewPort,
+  previewStatus,
+  previewError,
+  disabled,
+}: {
   diffText: string;
   diffStat?: string;
   onApply: () => void;
   onDiscard: () => void;
+  onPreview: () => void;
+  previewPort?: number;
+  previewStatus?: "starting" | "ready" | "error";
+  previewError?: string;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ borderTop: "1px solid #374151" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", flexWrap: "wrap" }}>
         <button onClick={() => setOpen((v) => !v)} style={{ background: "none", border: "none", color: "#9CA3AF", fontSize: 11, cursor: "pointer", padding: 0, flex: 1, textAlign: "left" }}>
           {open ? "▾" : "▸"} {diffStat?.trim() ? diffStat.trim().split("\n").pop() : "changes pending"}
         </button>
+        {!previewStatus && (
+          <button
+            onClick={onPreview}
+            disabled={disabled}
+            style={{ fontSize: 11, padding: "4px 10px", borderRadius: 4, border: "1px solid #374151", background: "#1F2937", color: "white", cursor: disabled ? "default" : "pointer" }}
+          >
+            👁 Preview
+          </button>
+        )}
+        {previewStatus === "starting" && <span style={{ fontSize: 10, color: "#9CA3AF" }}>Starting preview server…</span>}
+        {previewStatus === "error" && (
+          <span style={{ fontSize: 10, color: "#F87171" }} title={previewError}>
+            preview failed
+          </span>
+        )}
+        {previewStatus === "ready" && previewPort && (
+          <a href={`http://127.0.0.1:${previewPort}/`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--vle-accent, #9b8ec4)" }}>
+            Open in new tab ↗
+          </a>
+        )}
         <button
           onClick={onApply}
           disabled={disabled}

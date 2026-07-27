@@ -1,0 +1,24 @@
+/** Starts a live preview server (next dev) in a chat session's own worktree, on a free port — no iframe here, the panel just links to it in a new tab. See vle-editor/devGate / vle-editor/chatRunner. */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle-editor/devGate";
+import { startChatPreview } from "vle-editor/chatRunner";
+import { vleConfig } from "@/vle.config";
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  let body: { chatId?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, reason: "invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.chatId) {
+    return NextResponse.json({ ok: false, reason: "missing chatId" }, { status: 400 });
+  }
+
+  const result = await startChatPreview(body.chatId, vleConfig.repoRoot);
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}

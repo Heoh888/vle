@@ -158,14 +158,6 @@ export function killProcessTree(child: ChildProcess): void {
   }
 }
 
-function killPreview(jobId: string): void {
-  const child = previewProcesses().get(jobId);
-  if (child) {
-    killProcessTree(child);
-    previewProcesses().delete(jobId);
-  }
-}
-
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -183,8 +175,8 @@ function getFreePort(): Promise<number> {
   });
 }
 
-/** Fire-and-forget: flips previewStatus to "ready"/"error" once the server responds or times out — not awaited by startPreview, same background-polling shape as the agent job itself. */
-function pollPreviewReady(record: JobRecord, jobId: string, port: number): void {
+/** Fire-and-forget: flips previewStatus to "ready"/"error" once the server responds or times out — not awaited by startPreviewServer, same background-polling shape as the agent job itself. */
+function pollPreviewReady(record: PreviewableRecord, previewKey: string, port: number): void {
   const deadline = Date.now() + PREVIEW_READY_TIMEOUT_MS;
   const tick = async () => {
     if (record.previewStatus !== "starting") return; // already resolved, or job moved on (apply/discard)
@@ -200,7 +192,7 @@ function pollPreviewReady(record: JobRecord, jobId: string, port: number): void 
     if (Date.now() > deadline) {
       record.previewStatus = "error";
       record.previewError = "preview server didn't become ready in time";
-      killPreview(jobId);
+      stopPreviewServer(previewKey);
       return;
     }
     setTimeout(tick, PREVIEW_POLL_INTERVAL_MS);
@@ -283,6 +275,11 @@ function finishJob(record: JobRecord, stdout: string, stderr: string, exitCode: 
   // `git diff` alone ignores untracked (new) files.
   try {
     execFileSync("git", ["add", "-A"], { cwd: record.worktreePath, stdio: "pipe" });
+    try {
+      execFileSync("git", ["reset", "--", previewSymlinkPath(record.appDir)], { cwd: record.worktreePath, stdio: "pipe" });
+    } catch {
+      // No preview has run yet this job — nothing staged there. Fine.
+    }
     record.diffText = execFileSync("git", ["diff", "--cached", "--binary"], { cwd: record.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
     record.diffStat = execFileSync("git", ["diff", "--cached", "--stat"], { cwd: record.worktreePath, maxBuffer: 1024 * 1024 * 64 }).toString("utf8");
     record.status = "done";
@@ -394,7 +391,7 @@ export function refineJob(jobId: string, prompt: string): { ok: true } | { ok: f
   if (record.status !== "done") return { ok: false, reason: `job is ${record.status}, not done` };
   if (!record.sessionId) return { ok: false, reason: "this job has no resumable session — reload and retry" };
 
-  killPreview(jobId);
+  stopPreviewServer(`job:${jobId}`);
   record.status = "running";
   record.prompt = `${record.prompt}\n[follow-up] ${prompt}`;
   record.diffText = undefined;
@@ -427,6 +424,21 @@ const ENV_FILE_NAMES = [".env", ".env.local", ".env.development", ".env.developm
  * never had these files on disk. The preview server is plain `next dev`,
  * no LLM, nothing unsupervised, nothing logged.
  */
+/**
+ * Where startPreviewServer's node_modules symlink lands, relative to a
+ * worktree root — exported so every diff computation (this file's
+ * finishJob, chatRunner.ts's finalizeTurn) can exclude it the same way.
+ * Found live: the real repo's own .gitignore already has `node_modules/`
+ * (trailing slash — directories only), which does NOT match a symlink
+ * literally *named* node_modules, so a plain `git add -A` after a preview
+ * has run happily stages it. Applying that to the real repo would try to
+ * drop a symlink named "node_modules" right where a real node_modules
+ * directory already lives.
+ */
+export function previewSymlinkPath(appDir: string): string {
+  return path.join(appDir, "node_modules");
+}
+
 function copyEnvFilesForPreview(repoRoot: string, worktreePath: string, appDir: string): void {
   const srcDir = path.join(repoRoot, appDir);
   const destDir = path.join(worktreePath, appDir);
@@ -441,11 +453,32 @@ function copyEnvFilesForPreview(repoRoot: string, worktreePath: string, appDir: 
   }
 }
 
-export async function startPreview(jobId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const record = jobs().get(jobId);
-  if (!record) return { ok: false, reason: "job not found" };
-  if (record.status !== "done") return { ok: false, reason: `job is ${record.status}, not done` };
-  if (previewProcesses().has(jobId)) return { ok: true }; // already starting/running — idempotent
+/**
+ * The minimal shape startPreviewServer/pollPreviewReady actually need —
+ * JobRecord satisfies this structurally already; ChatSession (chatRunner.ts)
+ * was extended with the same 4 fields specifically so it can reuse this
+ * unchanged rather than duplicating the whole "spin up next dev in a
+ * worktree" mechanism a second time.
+ */
+export interface PreviewableRecord {
+  worktreePath: string;
+  repoRoot: string;
+  appDir: string;
+  previewPort?: number;
+  previewStatus?: "starting" | "ready" | "error";
+  previewError?: string;
+}
+
+/**
+ * `previewKey` namespaces the shared previewProcesses() map across both
+ * callers (agent jobs and, since chatRunner.ts reuses this, chats) — jobId
+ * and chatId are both independent randomUUID()s from separate systems, so
+ * a bare id could theoretically collide; callers prefix their own kind
+ * (`job:<id>` / `chat:<id>`) to rule that out entirely rather than rely on
+ * UUID collision odds.
+ */
+export async function startPreviewServer(previewKey: string, record: PreviewableRecord): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (previewProcesses().has(previewKey)) return { ok: true }; // already starting/running — idempotent
 
   copyEnvFilesForPreview(record.repoRoot, record.worktreePath, record.appDir);
 
@@ -486,24 +519,39 @@ export async function startPreview(jobId: string): Promise<{ ok: true } | { ok: 
     detached: true,
     env: { ...process.env, VLE_PREVIEW: "1" },
   });
-  previewProcesses().set(jobId, child);
+  previewProcesses().set(previewKey, child);
 
   child.on("error", (err) => {
     record.previewStatus = "error";
     record.previewError = `failed to start preview server: ${err.message}`;
-    previewProcesses().delete(jobId);
+    previewProcesses().delete(previewKey);
   });
   child.on("exit", () => {
     if (record.previewStatus === "starting") {
       record.previewStatus = "error";
       record.previewError = "preview server exited before becoming ready";
     }
-    previewProcesses().delete(jobId);
+    previewProcesses().delete(previewKey);
   });
 
-  pollPreviewReady(record, jobId, port);
+  pollPreviewReady(record, previewKey, port);
 
   return { ok: true };
+}
+
+export function stopPreviewServer(previewKey: string): void {
+  const child = previewProcesses().get(previewKey);
+  if (child) {
+    killProcessTree(child);
+    previewProcesses().delete(previewKey);
+  }
+}
+
+export async function startPreview(jobId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const record = jobs().get(jobId);
+  if (!record) return { ok: false, reason: "job not found" };
+  if (record.status !== "done") return { ok: false, reason: `job is ${record.status}, not done` };
+  return startPreviewServer(`job:${jobId}`, record);
 }
 
 export function applyJob(jobId: string): { ok: true } | { ok: false; reason: string } {
@@ -524,7 +572,7 @@ export function applyJob(jobId: string): { ok: true } | { ok: false; reason: str
   }
 
   fs.rmSync(patchFile, { force: true });
-  killPreview(jobId);
+  stopPreviewServer(`job:${jobId}`);
   cleanupWorktree(record);
   jobs().delete(jobId);
   return { ok: true };
@@ -539,7 +587,7 @@ export function discardJob(jobId: string): { ok: true } | { ok: false; reason: s
     killProcessTree(child);
     children().delete(jobId);
   }
-  killPreview(jobId);
+  stopPreviewServer(`job:${jobId}`);
 
   cleanupWorktree(record);
   jobs().delete(jobId);

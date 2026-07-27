@@ -26,7 +26,7 @@ import { instrumentJsx } from "vle-editor/instrumentJsx";
 import { checkDevGate } from "vle-editor/devGateCore";
 import { resolveConfig, type VleConfig, type VleConfigInput } from "vle-editor/config";
 import { startAgentJob, getJobStatus, refineJob, startPreview, applyJob, discardJob } from "vle-editor/agentRunner";
-import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession, listChatSessions, attachChatFile } from "vle-editor/chatRunner";
+import { startChatSession, getChatStatus, sendChatMessage, applyChatSession, discardChatSession, listChatSessions, attachChatFile, startChatPreview } from "vle-editor/chatRunner";
 import { applyPatch, resolveProjectFile, type PatchRequest } from "vle-editor/patch";
 import { pushHistory, historyStatus, undo, redo } from "vle-editor/history";
 import { scanDesignSystem } from "vle-editor/designSystemScan";
@@ -174,6 +174,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
       return sendJson(res, 400, { ok: false, reason: "missing chatId/filename/dataBase64" });
     }
     const result = attachChatFile(body.chatId, config.repoRoot, body.filename, Buffer.from(body.dataBase64, "base64"));
+    return sendJson(res, result.ok ? 200 : 422, result);
+  }
+  if (pathname === "/api/vle/chat/preview") {
+    if (!body?.chatId) return sendJson(res, 400, { ok: false, reason: "missing chatId" });
+    const result = await startChatPreview(body.chatId, config.repoRoot);
     return sendJson(res, result.ok ? 200 : 422, result);
   }
   if (pathname === "/api/vle/element") {

@@ -217,9 +217,12 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
     setJob(null);
   }, [job]);
 
-  // Same poll-while-running pattern as the job effect above.
+  // Same poll-while-running pattern as the job effect above — also keeps
+  // polling while a preview server is starting (up to ~45s cold start),
+  // not just while a turn is running.
   useEffect(() => {
-    if (!chat || chat.status !== "running") return;
+    if (!chat) return;
+    if (chat.status !== "running" && chat.previewStatus !== "starting") return;
     const interval = setInterval(async () => {
       const res = await fetch(`/api/vle/chat?chatId=${chat.id}`);
       const result = await res.json();
@@ -417,7 +420,12 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
       setChat({ ...chat, status: "error", error: result.reason ?? "apply failed" });
       return;
     }
-    setChat(null);
+    // The session stays alive (see chatRunner.ts's applyChatSession) — the
+    // diff clears but the conversation keeps going, so refetch instead of
+    // closing the panel out.
+    const refreshed = await fetch(`/api/vle/chat?chatId=${chat.id}`);
+    const refreshedResult = await refreshed.json();
+    setChat(refreshedResult.ok ? refreshedResult.chat : null);
   }, [chat]);
 
   const discardChat = useCallback(async () => {
@@ -428,6 +436,20 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
       body: JSON.stringify({ chatId: chat.id }),
     });
     setChat(null);
+  }, [chat]);
+
+  const previewChat = useCallback(async () => {
+    if (!chat) return;
+    setChat({ ...chat, previewStatus: "starting" });
+    const res = await fetch("/api/vle/chat/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId: chat.id }),
+    });
+    const result = await res.json();
+    if (!result.ok) {
+      setChat((prev) => (prev ? { ...prev, previewStatus: "error", previewError: result.reason ?? "preview failed" } : prev));
+    }
   }, [chat]);
 
   // Document-level, always attached (cheap no-op for any drag that isn't
@@ -713,6 +735,7 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
           onSend={sendChatMessage}
           onApply={applyChat}
           onDiscard={discardChat}
+          onPreview={previewChat}
           onClose={() => setChatOpen(false)}
           onLoadHistory={loadChatHistory}
           onSelectChat={selectChat}
