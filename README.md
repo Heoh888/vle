@@ -166,7 +166,7 @@ Both of these are handled automatically if you use `create-vle init` and the sni
 
 ## Set up with an AI coding agent instead
 
-If you'd rather have an agent (Claude Code, Cursor, etc.) do the whole install — including adapting the two manual steps to your project's actual structure, and setting up mock data/auth if your project needs a backend or auth provider that isn't running locally — paste this in:
+If you'd rather have an agent (Claude Code, Cursor, etc.) do the whole install — including adapting the two manual steps to your project's actual structure — paste this in:
 
 ```
 You are setting up VLE (Visual Live Editor) in this project — an in-browser
@@ -260,32 +260,10 @@ actually find in this repo rather than assuming a specific structure.
      unaffected by any of this — if it isn't, something in steps 0-5 wrote
      to the wrong directory and needs fixing before reporting success.
 
-7. If this project is gated behind auth, and/or depends on backend services
-   that aren't running locally right now — so a developer can't actually
-   open the app and click around — set up a minimal, EXPLICIT opt-in mock
-   (inside the worktree, committed there same as everything else):
-   - Find the project's real auth setup (NextAuth, Clerk, a custom check,
-     middleware, whatever it actually uses) and its data-fetching layer.
-   - Add a bypass/mock path gated behind a clearly-named env var (e.g.
-     MOCK_AUTH=1) that has to be set explicitly. Never bypass auth just
-     because NODE_ENV=development — real auth might genuinely be available
-     and working, don't silently override it.
-   - Prefer going through the real auth library's own machinery (e.g. a
-     NextAuth Credentials provider that always succeeds) over monkey-
-     patching internals — this keeps every downstream session check and
-     protected-route guard working completely unmodified.
-   - For any page fetching data from a backend that isn't running, add mock
-     API routes (or a mock fetcher) returning realistic data shaped to
-     match the project's own existing TypeScript types — gated behind the
-     same env flag, returning 404 when it's off, so this can never mask a
-     real missing integration outside of explicit opt-in.
-   - Document the flag with one line in .env.example.
-
-8. Report back: the worktree's path and branch name, what you installed,
+7. Report back: the worktree's path and branch name, what you installed,
    exactly how you adapted the manual wiring (and why, if you deviated from
-   the snippets), whether you set up any mocks (with the exact env var
-   name), and an explicit reminder that `local/devtools` must never be
-   pushed — the pre-push hook blocks it, but I should still know it's
+   the snippets), and an explicit reminder that `local/devtools` must never
+   be pushed — the pre-push hook blocks it, but I should still know it's
    there and why.
 ```
 
