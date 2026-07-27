@@ -204,12 +204,33 @@ export function cleanupWorktree(record: { worktreePath: string; branch: string; 
   try {
     execFileSync("git", ["worktree", "remove", record.worktreePath, "--force"], { cwd: record.repoRoot, stdio: "pipe" });
   } catch {
-    // Best-effort — a leftover worktree dir is gitignored and harmless, not worth failing over.
+    // `git worktree remove` refuses outright if the worktree's own .git
+    // file is already missing — found live: a preview server still
+    // holding the directory as its cwd at the exact moment of removal can
+    // leave exactly this half-deleted state (`.git` gone, rest of the
+    // tree still there), and --force does not override that particular
+    // validation. Left alone, this shows up as permanent clutter in any
+    // git tool (branch list, `git worktree list --porcelain` still
+    // reports it "prunable") and — worse — blocks the branch delete below
+    // forever, since git still considers the branch "in use" by the
+    // broken worktree until the stale entry is pruned. Finish the job by
+    // hand: remove whatever's left of the directory, then prune git's own
+    // now-stale bookkeeping for it.
+    try {
+      fs.rmSync(record.worktreePath, { recursive: true, force: true });
+    } catch {
+      // Best-effort.
+    }
+    try {
+      execFileSync("git", ["worktree", "prune"], { cwd: record.repoRoot, stdio: "pipe" });
+    } catch {
+      // Best-effort.
+    }
   }
   try {
     execFileSync("git", ["branch", "-D", record.branch], { cwd: record.repoRoot, stdio: "pipe" });
   } catch {
-    // Same.
+    // Same best-effort reasoning — a leftover branch is harmless clutter, not worth failing Apply/Discard over.
   }
 }
 
