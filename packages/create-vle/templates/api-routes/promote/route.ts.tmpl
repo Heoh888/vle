@@ -1,0 +1,28 @@
+/**
+ * Dev-only endpoint for "Promote to main repo" — only relevant for the
+ * "Keeping VLE fully local" setup (see README), where this checkout is a
+ * dedicated local/* branch's own worktree and vle.config.ts's
+ * mainRepoRoot points at the developer's real checkout. GET previews the
+ * current diff, POST actually applies it there. See vle-editor/devGate /
+ * vle-editor/promote.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { devGate } from "vle-editor/devGate";
+import { getPromoteDiff, promoteToMainRepo } from "vle-editor/promote";
+import { vleConfig } from "@/vle.config";
+
+export async function GET(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  const result = getPromoteDiff(vleConfig);
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}
+
+export async function POST(req: NextRequest) {
+  const blocked = devGate(req);
+  if (blocked) return blocked;
+
+  const result = promoteToMainRepo(vleConfig);
+  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+}

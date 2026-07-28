@@ -11,6 +11,7 @@ import { CommentPin } from "./CommentPin";
 import { AgentJobPanel, type AgentJobView } from "./AgentJobPanel";
 import { ResponsivePreview } from "./ResponsivePreview";
 import { ChatPanel, type ChatView, type ChatSummaryView, type ChatAttachment } from "./ChatPanel";
+import { PromotePanel } from "./PromotePanel";
 import { DesignSystemPanel, VLE_COMPONENT_DND_MIME, type DraggedComponentPayload } from "./DesignSystemPanel";
 import { CreativesPanel, VLE_CREATIVE_DND_MIME, type DraggedCreativePayload } from "./CreativesPanel";
 import { InsertionLine, type InsertionIndicator } from "./InsertionLine";
@@ -79,6 +80,12 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
   // long-established behavior) until this resolves, rather than flashing
   // every field into a different write-mode a moment after mount.
   const [stylingMode, setStylingMode] = useState<"tailwind" | "inline">("tailwind");
+  // Whether vle.config.ts's mainRepoRoot is set — gates the "⬆ Promote"
+  // button/panel entirely. Only meaningful for the "Keeping VLE fully
+  // local" setup (see README); false for everyone else, so the button
+  // never renders for a normal single-checkout install.
+  const [hasMainRepo, setHasMainRepo] = useState(false);
+  const [promoteOpen, setPromoteOpen] = useState(false);
   useEffect(() => {
     fetch("/api/vle/meta")
       .then((res) => res.json())
@@ -86,6 +93,7 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
         if (result?.ok && (result.stylingMode === "tailwind" || result.stylingMode === "inline")) {
           setStylingMode(result.stylingMode);
         }
+        if (result?.ok && result.hasMainRepo) setHasMainRepo(true);
       })
       .catch(() => {
         // Best-effort — worst case, controls stay in the "tailwind" default.
@@ -726,6 +734,23 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
         >
           🎨 Creatives
         </button>
+        {hasMainRepo && (
+          <button
+            onClick={() => setPromoteOpen((v) => !v)}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 999,
+              border: "none",
+              background: promoteOpen ? "var(--vle-accent, #9b8ec4)" : "#111827",
+              color: "white",
+              fontSize: 12,
+              cursor: "pointer",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+            }}
+          >
+            ⬆ Promote
+          </button>
+        )}
       </div>
 
       {responsiveOpen && <ResponsivePreview onClose={() => setResponsiveOpen(false)} />}
@@ -749,6 +774,7 @@ export function VisualEditorOverlay({ accentColor, hideForPreview }: VisualEdito
       )}
       {designSystemOpen && <DesignSystemPanel onClose={() => setDesignSystemOpen(false)} />}
       {creativesOpen && <CreativesPanel onClose={() => setCreativesOpen(false)} />}
+      {promoteOpen && <PromotePanel onClose={() => setPromoteOpen(false)} />}
       <InsertionLine indicator={insertIndicator} />
       {blockedRect && (
         <div

@@ -31,6 +31,7 @@ import { applyPatch, resolveProjectFile, type PatchRequest } from "vle-editor/pa
 import { pushHistory, historyStatus, undo, redo } from "vle-editor/history";
 import { scanDesignSystem } from "vle-editor/designSystemScan";
 import { scanCreatives, resolveCreativeFile, copyCreativeToPublic } from "vle-editor/creativesScan";
+import { getPromoteDiff, promoteToMainRepo } from "vle-editor/promote";
 import { locateElement } from "vle-editor";
 
 export type VlePluginOptions = Partial<Omit<VleConfigInput, "projectRoot">> & { projectRoot?: string };
@@ -96,7 +97,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
     return sendJson(res, 200, { ok: true, components });
   }
   if (method === "GET" && pathname === "/api/vle/meta") {
-    return sendJson(res, 200, { ok: true, stylingMode: config.stylingMode });
+    return sendJson(res, 200, { ok: true, stylingMode: config.stylingMode, hasMainRepo: !!config.mainRepoRoot });
+  }
+  if (method === "GET" && pathname === "/api/vle/promote") {
+    const result = getPromoteDiff(config);
+    return sendJson(res, result.ok ? 200 : 422, result);
   }
   if (method === "GET" && pathname === "/api/vle/creatives") {
     return sendJson(res, 200, { ok: true, assets: scanCreatives(config) });
@@ -219,6 +224,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, config: VleC
       pushHistory(absPath, before, after);
     }
     return sendJson(res, result.ok ? 200 : 422, { ...result, ...historyStatus() });
+  }
+  if (pathname === "/api/vle/promote") {
+    const result = promoteToMainRepo(config);
+    return sendJson(res, result.ok ? 200 : 422, result);
   }
   if (pathname === "/api/vle/undo") {
     return sendJson(res, 200, undo());

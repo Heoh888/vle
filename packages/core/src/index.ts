@@ -20,6 +20,9 @@ export type { DesignSystemComponent } from "./designSystemScan";
 export { scanCreatives, resolveCreativeFile, copyCreativeToPublic } from "./creativesScan";
 export type { CreativeAsset, CopyToPublicResult } from "./creativesScan";
 
+export { getPromoteDiff, promoteToMainRepo } from "./promote";
+export type { PromoteDiff } from "./promote";
+
 export { locateElement, buildAgentPrompt, buildChatPrompt } from "./agentPrompt";
 export type { LocatedElement } from "./agentPrompt";
 

@@ -86,6 +86,20 @@ export interface VleConfig {
    * dev-only VLE endpoint that would 404 in production.
    */
   publicDir: string;
+
+  /**
+   * Absolute path to a *different* checkout of this same repo — the
+   * "Promote to main repo" button's target. Only relevant for the
+   * "Keeping VLE fully local" setup (see README): when VLE runs inside a
+   * dedicated `local/*` branch's own git worktree, click-to-edit patches
+   * land in that worktree's files, never in the developer's real
+   * checkout. Setting this points VLE at that real checkout so a single
+   * click can `git apply` the current diff over there. Left unset by
+   * default — the Promote button doesn't render at all unless this is
+   * explicitly configured, since it only makes sense in that specific
+   * two-checkout setup.
+   */
+  mainRepoRoot?: string;
 }
 
 import { execFileSync } from "node:child_process";
@@ -149,5 +163,6 @@ export function resolveConfig(input: VleConfigInput): VleConfig {
     stylingMode: input.stylingMode ?? detectStylingMode(projectRoot),
     creativesDir: input.creativesDir ?? DEFAULT_CREATIVES_DIR,
     publicDir: input.publicDir ?? DEFAULT_PUBLIC_DIR,
+    mainRepoRoot: input.mainRepoRoot,
   };
 }
