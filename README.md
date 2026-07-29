@@ -63,6 +63,22 @@ git -C ../<repo>-vle fetch
 git -C ../<repo>-vle rebase origin/<your-base-branch>
 ```
 
+**Getting an edit out of the isolated worktree.** Click-to-edit patches land in `../<repo>-vle`'s own files — they can't appear in your main checkout on their own, it's a different directory. Set `mainRepoRoot` in `vle.config.ts` to your main checkout's absolute path and a **⬆ Promote** button appears in the toolbar: it shows the current diff, and on confirm applies it to `mainRepoRoot` as an ordinary uncommitted change there (review/commit it same as anything else) and clears it out of the worktree so it can't get promoted twice.
+
+```ts
+// vle.config.ts, inside ../<repo>-vle
+mainRepoRoot: "/absolute/path/to/your-main-checkout",
+```
+
+**Tearing the whole thing down** once you're done, or to start clean:
+
+```bash
+# stop `npm run dev` first — it's running from inside the worktree being removed
+cd ../<repo>-vle && npx create-vle teardown
+```
+
+Refuses to run against anything that isn't a `local/*` branch's own linked worktree, so it can't be pointed at the wrong directory by mistake.
+
 The rest of this README (install steps, gotchas, the AI-agent prompt) applies exactly the same — just run it inside `../<repo>-vle` instead of your main checkout. The section right below is the same thing without the isolation, worth it only if you're the sole user of this repo and there's genuinely no one to explain it to.
 
 ## Install & run — step by step
@@ -264,7 +280,11 @@ actually find in this repo rather than assuming a specific structure.
    exactly how you adapted the manual wiring (and why, if you deviated from
    the snippets), and an explicit reminder that `local/devtools` must never
    be pushed — the pre-push hook blocks it, but I should still know it's
-   there and why.
+   there and why. Also mention: setting `mainRepoRoot` in vle.config.ts to
+   this main checkout's path turns on a "⬆ Promote" button in the toolbar
+   for carrying click-to-edit changes over later, and `npx create-vle
+   teardown` (run from inside the worktree, after stopping `npm run dev`)
+   removes the whole worktree + branch when it's no longer needed.
 ```
 
 ## Configuration

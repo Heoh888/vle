@@ -21,6 +21,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import readline from "node:readline";
 import { execFileSync } from "node:child_process";
 
 const TEMPLATES_DIR = path.join(__dirname, "..", "templates");
@@ -316,10 +317,143 @@ function init(): void {
   }
 }
 
+function askConfirm(question: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === "yes");
+    });
+  });
+}
+
+/**
+ * `npx create-vle teardown` — the other half of the "Keeping VLE fully
+ * local" setup (see README): removes the dedicated local/* branch's git
+ * worktree and the branch itself. Deliberately a standalone terminal
+ * command, not a button in VLE's own UI — the dev server answering that
+ * button click would be running *from inside* the very directory being
+ * deleted, which doesn't have a clean way to both finish removing itself
+ * and report success back to the browser. Run this after stopping
+ * `npm run dev`, from inside the worktree you want gone.
+ *
+ * Two safety checks before touching anything, both hard failures (not
+ * warnings): this must be a *linked* worktree (its `.git` is a file
+ * pointing at the real repo, not a real `.git` directory — a plain
+ * checkout's `.git` is always a directory, so this alone rules out ever
+ * running against someone's only copy of a repo), and its checked-out
+ * branch must match the `local/*` naming convention this whole setup
+ * relies on — refusing anything else means teardown can never delete a
+ * worktree/branch it didn't create this way, even if pointed at one.
+ */
+async function teardown(): Promise<void> {
+  const cwd = process.cwd();
+
+  let worktreeRoot: string;
+  try {
+    worktreeRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, stdio: ["ignore", "pipe", "ignore"] })
+      .toString("utf8")
+      .trim();
+  } catch {
+    console.error("Not inside a git repo.");
+    process.exit(1);
+  }
+
+  const gitPath = path.join(worktreeRoot, ".git");
+  let gitStat: fs.Stats;
+  try {
+    gitStat = fs.lstatSync(gitPath);
+  } catch {
+    console.error(`No .git found at ${worktreeRoot} — nothing to tear down.`);
+    process.exit(1);
+  }
+  if (!gitStat.isFile()) {
+    console.error(
+      `${worktreeRoot}'s .git is a real directory, not a linked worktree's .git file — this looks\n` +
+        `like a normal checkout. Refusing to touch it: teardown only ever removes a *linked*\n` +
+        `worktree created via "git worktree add", never a repo's main checkout.`
+    );
+    process.exit(1);
+  }
+
+  let branch: string;
+  try {
+    branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: worktreeRoot, stdio: ["ignore", "pipe", "ignore"] })
+      .toString("utf8")
+      .trim();
+  } catch {
+    console.error("Couldn't determine the current branch.");
+    process.exit(1);
+  }
+  if (!branch.startsWith("local/")) {
+    console.error(
+      `Current branch is "${branch}", not under local/* — refusing to delete it.\n` +
+        `teardown only ever removes branches following the "Keeping VLE fully local" naming\n` +
+        `convention (see the README), so it can never delete something else by mistake.`
+    );
+    process.exit(1);
+  }
+
+  // A linked worktree's .git file reads "gitdir: /main/repo/.git/worktrees/<name>".
+  const gitFileContents = fs.readFileSync(gitPath, "utf8").trim();
+  const match = gitFileContents.match(/^gitdir:\s*(.+)$/);
+  if (!match) {
+    console.error(`Couldn't parse ${gitPath} (unexpected format) — aborting rather than guess.`);
+    process.exit(1);
+  }
+  const mainRepoRoot = path.dirname(path.dirname(path.dirname(match[1])));
+
+  console.log(
+    `This will permanently remove:\n` +
+      `  worktree: ${worktreeRoot}\n` +
+      `  branch:   ${branch}\n` +
+      `(git commands run from: ${mainRepoRoot})\n\n` +
+      `Make sure \`npm run dev\` isn't still running from inside that worktree before continuing.\n`
+  );
+  const confirmed = await askConfirm('Type "yes" to continue: ');
+  if (!confirmed) {
+    console.log("Aborted — nothing was touched.");
+    return;
+  }
+
+  try {
+    execFileSync("git", ["worktree", "remove", worktreeRoot, "--force"], { cwd: mainRepoRoot, stdio: "pipe" });
+  } catch {
+    // Same fallback as agentRunner.ts's cleanupWorktree — found live: a
+    // process still holding the worktree as its cwd at the exact moment
+    // of removal can leave a half-deleted worktree (.git gone, rest of
+    // the tree still there) that plain --force refuses to finish.
+    try {
+      fs.rmSync(worktreeRoot, { recursive: true, force: true });
+    } catch {
+      // Best-effort.
+    }
+    try {
+      execFileSync("git", ["worktree", "prune"], { cwd: mainRepoRoot, stdio: "pipe" });
+    } catch {
+      // Best-effort.
+    }
+  }
+
+  try {
+    execFileSync("git", ["branch", "-D", branch], { cwd: mainRepoRoot, stdio: "pipe" });
+  } catch (err) {
+    console.error(`Worktree removed, but failed to delete branch "${branch}": ${(err as Error).message}`);
+    process.exit(1);
+  }
+
+  console.log(`Done — removed the worktree and deleted branch "${branch}".`);
+}
+
 const [, , command] = process.argv;
 if (command === "init") {
   init();
+} else if (command === "teardown") {
+  teardown().catch((err) => {
+    console.error(`teardown failed: ${(err as Error).message}`);
+    process.exit(1);
+  });
 } else {
-  console.log("Usage: npx create-vle init");
+  console.log("Usage: npx create-vle init\n       npx create-vle teardown");
   process.exit(command ? 1 : 0);
 }
